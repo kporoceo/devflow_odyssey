@@ -99,13 +99,15 @@ export default function Engagements() {
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {engagements.map((eng) => (
-            <div key={eng.id} style={{ background: 'white', padding: 12, borderRadius: 6, display: 'flex', justifyContent: 'space-between' }}>
-              <div>
-                <strong>{eng.engagement_name}</strong>
-                <p style={{ margin: 0, color: '#666' }}>{eng.client_name}</p>
+            <Link key={eng.id} href={`/engagements/${eng.id}`}>
+              <div style={{ background: 'white', padding: 12, borderRadius: 6, display: 'flex', justifyContent: 'space-between', cursor: 'pointer' }}>
+                <div>
+                  <strong>{eng.engagement_name}</strong>
+                  <p style={{ margin: 0, color: '#666' }}>{eng.client_name}</p>
+                </div>
+                <span style={{ alignSelf: 'center', color: '#2a7' }}>{eng.status}</span>
               </div>
-              <span style={{ alignSelf: 'center', color: '#2a7' }}>{eng.status}</span>
-            </div>
+            </Link>
           ))}
         </div>
       )}
