@@ -4,14 +4,33 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Papa from 'papaparse';
+import * as XLSX from 'xlsx';
 import { createClient } from '../../../../lib/supabaseClient';
 
-// These are the columns we require in the uploaded CSV.
-// Matching is case-insensitive and ignores extra spaces.
 const REQUIRED_COLUMNS = ['date', 'account', 'description', 'debit', 'credit'];
 
+// Extensions we actually know how to read.
+const SUPPORTED_EXTENSIONS = ['csv', 'xlsx', 'xls'];
+
+// Common file types clients might mistakenly send, mapped to a helpful
+// message instead of a raw crash.
+const KNOWN_UNSUPPORTED = {
+  pdf: 'PDF files can\'t be read as data. Please ask for an Excel (.xlsx) or CSV export of the ledger instead.',
+  doc: 'Word documents can\'t be read as data. Please ask for an Excel (.xlsx) or CSV export instead.',
+  docx: 'Word documents can\'t be read as data. Please ask for an Excel (.xlsx) or CSV export instead.',
+  numbers: 'Apple Numbers files aren\'t supported. Please export as Excel (.xlsx) or CSV from Numbers first.',
+  png: 'Images can\'t be read as data. Please ask for the actual Excel or CSV file, not a screenshot.',
+  jpg: 'Images can\'t be read as data. Please ask for the actual Excel or CSV file, not a screenshot.',
+  jpeg: 'Images can\'t be read as data. Please ask for the actual Excel or CSV file, not a screenshot.',
+  zip: 'Zipped folders aren\'t supported. Please extract and upload the individual Excel or CSV file.',
+};
+
 function normalizeHeader(h) {
-  return h.trim().toLowerCase().replace(/\s+/g, '_');
+  return String(h).trim().toLowerCase().replace(/\s+/g, '_');
+}
+
+function getExtension(filename) {
+  return filename.split('.').pop().toLowerCase();
 }
 
 export default function UploadJEData({ params }) {
@@ -19,7 +38,7 @@ export default function UploadJEData({ params }) {
   const [fileName, setFileName] = useState('');
   const [parsedRows, setParsedRows] = useState([]);
   const [validationErrors, setValidationErrors] = useState([]);
-  const [status, setStatus] = useState(''); // '', 'validating', 'ready', 'saving', 'done', 'error'
+  const [status, setStatus] = useState('');
   const [saveMessage, setSaveMessage] = useState('');
   const router = useRouter();
   const supabase = createClient();
@@ -29,30 +48,66 @@ export default function UploadJEData({ params }) {
     if (!file) return;
 
     setFileName(file.name);
-    setStatus('validating');
     setValidationErrors([]);
     setParsedRows([]);
     setSaveMessage('');
 
-    Papa.parse(file, {
-      header: true,
-      skipEmptyLines: true,
-      complete: (results) => {
-        validateAndPrepare(results);
-      },
-      error: (err) => {
-        setValidationErrors([`Could not read file: ${err.message}`]);
+    const ext = getExtension(file.name);
+
+    if (KNOWN_UNSUPPORTED[ext]) {
+      setValidationErrors([KNOWN_UNSUPPORTED[ext]]);
+      setStatus('error');
+      return;
+    }
+
+    if (!SUPPORTED_EXTENSIONS.includes(ext)) {
+      setValidationErrors([
+        `".${ext}" files aren't supported. Please upload a CSV (.csv) or Excel (.xlsx, .xls) file.`,
+      ]);
+      setStatus('error');
+      return;
+    }
+
+    setStatus('validating');
+
+    if (ext === 'csv') {
+      Papa.parse(file, {
+        header: true,
+        skipEmptyLines: true,
+        complete: (results) => validateAndPrepare(results.meta.fields || [], results.data),
+        error: (err) => {
+          setValidationErrors([`Could not read file: ${err.message}`]);
+          setStatus('error');
+        },
+      });
+    } else {
+      const reader = new FileReader();
+      reader.onload = (evt) => {
+        try {
+          const workbook = XLSX.read(evt.target.result, { type: 'binary' });
+          const firstSheetName = workbook.SheetNames[0];
+          const sheet = workbook.Sheets[firstSheetName];
+          const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+          const fields = rows.length > 0 ? Object.keys(rows[0]) : [];
+
+          validateAndPrepare(fields, rows, workbook.SheetNames.length);
+        } catch (err) {
+          setValidationErrors([`Could not read Excel file: ${err.message}`]);
+          setStatus('error');
+        }
+      };
+      reader.onerror = () => {
+        setValidationErrors(['Could not read the file. It may be corrupted.']);
         setStatus('error');
-      },
-    });
+      };
+      reader.readAsBinaryString(file);
+    }
   }
 
-  function validateAndPrepare(results) {
+  function validateAndPrepare(rawHeaders, dataRows, sheetCount = 1) {
     const errors = [];
-    const rawHeaders = results.meta.fields || [];
     const normalizedHeaders = rawHeaders.map(normalizeHeader);
 
-    // --- Check 1: required columns present ---
     const missing = REQUIRED_COLUMNS.filter((col) => !normalizedHeaders.includes(col));
     if (missing.length > 0) {
       errors.push(
@@ -60,8 +115,7 @@ export default function UploadJEData({ params }) {
       );
     }
 
-    // --- Check 2: file isn't empty ---
-    if (results.data.length === 0) {
+    if (dataRows.length === 0) {
       errors.push('The file has no data rows.');
     }
 
@@ -71,25 +125,31 @@ export default function UploadJEData({ params }) {
       return;
     }
 
-    // Build a lookup from normalized header -> original header, so we can
-    // read values regardless of exact casing/spacing in the uploaded file.
     const headerMap = {};
     rawHeaders.forEach((h) => { headerMap[normalizeHeader(h)] = h; });
 
-    // --- Check 3: validate each row's data types ---
     const rowErrors = [];
     const cleanRows = [];
 
-    results.data.forEach((row, index) => {
-      const rowNum = index + 2; // +2 accounts for header row + 0-index
-      const dateVal = row[headerMap['date']]?.trim();
-      const accountVal = row[headerMap['account']]?.trim();
-      const descVal = row[headerMap['description']]?.trim();
-      const debitVal = row[headerMap['debit']]?.trim();
-      const creditVal = row[headerMap['credit']]?.trim();
+    dataRows.forEach((row, index) => {
+      const rowNum = index + 2;
+      const dateVal = String(row[headerMap['date']] ?? '').trim();
+      const accountVal = String(row[headerMap['account']] ?? '').trim();
+      const descVal = String(row[headerMap['description']] ?? '').trim();
+      const debitVal = String(row[headerMap['debit']] ?? '').trim();
+      const creditVal = String(row[headerMap['credit']] ?? '').trim();
 
-      if (!dateVal || isNaN(Date.parse(dateVal))) {
-        rowErrors.push(`Row ${rowNum}: invalid or missing date ("${dateVal || ''}")`);
+      // Excel sometimes stores dates as serial numbers instead of text.
+      // sheet_to_json usually converts date-formatted cells automatically,
+      // but this guards against raw numbers slipping through.
+      let parsedDate = Date.parse(dateVal);
+      if (isNaN(parsedDate) && !isNaN(Number(dateVal)) && dateVal !== '') {
+        const excelEpoch = new Date(1899, 11, 30);
+        parsedDate = excelEpoch.getTime() + Number(dateVal) * 86400000;
+      }
+
+      if (!dateVal || isNaN(parsedDate)) {
+        rowErrors.push(`Row ${rowNum}: invalid or missing date ("${dateVal}")`);
         return;
       }
       if (!accountVal) {
@@ -109,22 +169,24 @@ export default function UploadJEData({ params }) {
 
       cleanRows.push({
         engagement_id: engagementId,
-        entry_date: new Date(dateVal).toISOString().slice(0, 10),
+        entry_date: new Date(parsedDate).toISOString().slice(0, 10),
         account: accountVal,
-        description: descVal || '',
+        description: descVal,
         debit,
         credit,
       });
     });
 
-    // Cap how many row-level errors we show so the screen doesn't explode
-    // on a huge malformed file.
     if (rowErrors.length > 0) {
       setValidationErrors(rowErrors.slice(0, 20).concat(
         rowErrors.length > 20 ? [`...and ${rowErrors.length - 20} more row error(s).`] : []
       ));
       setStatus('error');
       return;
+    }
+
+    if (sheetCount > 1) {
+      setSaveMessage(`Note: this file has ${sheetCount} sheets — only the first sheet was read.`);
     }
 
     setParsedRows(cleanRows);
@@ -134,11 +196,8 @@ export default function UploadJEData({ params }) {
   async function handleConfirmSave() {
     setStatus('saving');
     const { data: { user } } = await supabase.auth.getUser();
-
     const rowsWithUploader = parsedRows.map((r) => ({ ...r, uploaded_by: user.id }));
 
-    // Insert in batches of 500 — Supabase/Postgres handles large single inserts
-    // fine, but batching keeps payload size safe for bigger files.
     const BATCH_SIZE = 500;
     try {
       for (let i = 0; i < rowsWithUploader.length; i += BATCH_SIZE) {
@@ -161,11 +220,11 @@ export default function UploadJEData({ params }) {
       </Link>
       <h1>Upload JE Data</h1>
       <p style={{ color: '#666' }}>
-        Upload a CSV file of journal entries. Required columns: <strong>Date, Account, Description, Debit, Credit</strong>.
+        Upload a CSV or Excel file of journal entries. Required columns: <strong>Date, Account, Description, Debit, Credit</strong>.
       </p>
 
       <div style={{ background: 'white', padding: 20, borderRadius: 8, marginBottom: 16 }}>
-        <input type="file" accept=".csv" onChange={handleFileChange} />
+        <input type="file" accept=".csv,.xlsx,.xls" onChange={handleFileChange} />
         {fileName && <p style={{ color: '#666', marginTop: 8 }}>Selected: {fileName}</p>}
       </div>
 
@@ -182,6 +241,7 @@ export default function UploadJEData({ params }) {
 
       {status === 'ready' && (
         <div style={{ background: '#eaf6ea', border: '1px solid #8c8', padding: 16, borderRadius: 8, marginBottom: 16 }}>
+          {saveMessage && <p style={{ color: '#a70', margin: '0 0 8px' }}>{saveMessage}</p>}
           <p style={{ margin: 0, marginBottom: 12 }}>
             <strong>{parsedRows.length} rows</strong> passed validation and are ready to save.
           </p>
