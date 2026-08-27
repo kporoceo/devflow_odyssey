@@ -75,6 +75,13 @@ export default function EngagementDetail({ params }) {
             <p style={{ color: '#666', margin: 0 }}>Set thresholds for the 5 JE testing rules</p>
           </div>
         </Link>
+
+        <Link href={`/engagements/${id}/testing`}>
+          <div style={{ background: 'white', padding: 20, borderRadius: 8, cursor: 'pointer', gridColumn: '1 / -1' }}>
+            <h3 style={{ marginTop: 0 }}>Run JE Testing</h3>
+            <p style={{ color: '#666', margin: 0 }}>Run the 5 automated tests against uploaded entries</p>
+          </div>
+        </Link>
       </div>
     </div>
   );
