@@ -4,7 +4,9 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '../../../../lib/supabaseClient';
-import { runJETests, getRuleStatus, RULE_LABELS, DEFAULT_CRITERIA } from '../../../../lib/jeTesting';
+import { runJETests, getRuleStatus, groupJournalEntries, RULE_LABELS, DEFAULT_CRITERIA } from '../../../../lib/jeTesting';
+import { askAI } from '../../../../lib/ai';
+import FlagReview from '../../../../components/FlagReview';
 
 const STATUS_STYLE = {
   on: { label: 'Ran', color: '#2a7' },
@@ -22,6 +24,11 @@ export default function RunJETesting({ params }) {
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
   const [saveMessage, setSaveMessage] = useState('');
+  const [aiNotes, setAiNotes] = useState({});       // entry id -> { risk, explanation, draft_comment }
+  const [reviews, setReviews] = useState({});       // entry id -> saved flag_reviews row
+  const [adjustments, setAdjustments] = useState({}); // entry id -> adjusting_entries row
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiMessage, setAiMessage] = useState('');
   const router = useRouter();
   const supabase = createClient();
 
@@ -49,6 +56,17 @@ export default function RunJETesting({ params }) {
       const { data: holidayData } = await supabase
         .from('holidays')
         .select('holiday_date, name');
+
+      const { data: reviewData } = await supabase
+        .from('flag_reviews')
+        .select('*')
+        .eq('engagement_id', engagementId);
+      const { data: adjustmentData } = await supabase
+        .from('adjusting_entries')
+        .select('*')
+        .eq('engagement_id', engagementId);
+      setReviews(Object.fromEntries((reviewData || []).map((r) => [r.journal_entry_id, r])));
+      setAdjustments(Object.fromEntries((adjustmentData || []).filter((a) => a.journal_entry_id).map((a) => [a.journal_entry_id, a])));
 
       setEntries(entryData || []);
       // Fall back to the default settings for anything never configured,
@@ -121,6 +139,34 @@ export default function RunJETesting({ params }) {
     }
 
     setSaveMessage(`Saved: ${flaggedEntries.length} of ${results.length} entries flagged.`);
+  }
+
+  // The other lines of the same journal entry, for each line.
+  function linesOfSameJE(entry) {
+    const groups = groupJournalEntries(entries) || [];
+    return groups.find((g) => g.some((l) => l.id === entry.id)) || [entry];
+  }
+
+  // Asks the AI about the next 10 flagged lines that don't have a note yet.
+  async function explainNext(sorted) {
+    const todo = sorted.filter((e) => !aiNotes[e.id]).slice(0, 10);
+    if (todo.length === 0) return;
+    setAiBusy(true);
+    setAiMessage('');
+    try {
+      const { items } = await askAI(supabase, 'explain_flags', {
+        items: todo.map((e) => ({
+          ...e,
+          other_lines: linesOfSameJE(e).filter((l) => l.id !== e.id),
+        })),
+      });
+      const next = {};
+      items.forEach((it) => { next[it.id] = it; });
+      setAiNotes((prev) => ({ ...prev, ...next }));
+    } catch (err) {
+      setAiMessage(err.message);
+    }
+    setAiBusy(false);
   }
 
   if (loading) return <p style={{ padding: 24 }}>Loading...</p>;
@@ -196,6 +242,24 @@ export default function RunJETesting({ params }) {
             </table>
           </div>
 
+          {flagged.length > 0 && (
+            <div style={{ background: 'white', padding: 16, borderRadius: 8, marginBottom: 16 }}>
+              <strong>Review the flags</strong>
+              <p style={{ color: '#666', fontSize: 14, margin: '4px 0 12px' }}>
+                Riskiest first. For each one, pick your decision and write a comment. The AI can explain a flag and draft
+                the comment, but only you decide. {Object.keys(reviews).filter((id) => flagged.some((f) => f.id === id)).length} of {flagged.length} reviewed.
+              </p>
+              <button
+                onClick={() => explainNext(sortedFlagged)}
+                disabled={aiBusy || sortedFlagged.every((e) => aiNotes[e.id])}
+                style={{ padding: '8px 14px', background: '#3b4cca', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer' }}
+              >
+                {aiBusy ? 'Asking AI...' : sortedFlagged.every((e) => aiNotes[e.id]) ? 'AI explained every flag' : 'Ask AI to explain the next 10'}
+              </button>
+              {aiMessage && <p style={{ color: '#a70', marginBottom: 0 }}>{aiMessage}</p>}
+            </div>
+          )}
+
           {flagged.length === 0 ? (
             <p style={{ color: '#666' }}>No entries were flagged under the current testing criteria.</p>
           ) : (
@@ -223,6 +287,17 @@ export default function RunJETesting({ params }) {
                       </div>
                     ))}
                   </div>
+                  <FlagReview
+                    engagementId={engagementId}
+                    entry={entry}
+                    jeLines={linesOfSameJE(entry)}
+                    accounts={[...new Set(entries.map((e) => e.account))]}
+                    note={aiNotes[entry.id]}
+                    review={reviews[entry.id]}
+                    adjustment={adjustments[entry.id]}
+                    onReviewSaved={(row) => setReviews((prev) => ({ ...prev, [entry.id]: row }))}
+                    onAdjustmentSaved={(row) => setAdjustments((prev) => ({ ...prev, [entry.id]: row }))}
+                  />
                 </div>
               ))}
             </div>

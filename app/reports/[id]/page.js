@@ -6,6 +6,7 @@ import { createClient } from '../../../lib/supabaseClient';
 import { useProfile } from '../../../components/AppShell';
 import { canPrepareReports, isClient, signoffStepFor, STATUS_COLORS } from '../../../lib/roles';
 import { RULE_LABELS } from '../../../lib/jeTesting';
+import { askAI, AI_BADGE_STYLE } from '../../../lib/ai';
 
 export default function ReportDetail({ params }) {
   const { id } = params;
@@ -19,6 +20,9 @@ export default function ReportDetail({ params }) {
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const [notFound, setNotFound] = useState(false);
+  const [adjustments, setAdjustments] = useState([]);
+  const [adjComments, setAdjComments] = useState({});
+  const [aiDrafted, setAiDrafted] = useState(false);
   const supabase = createClient();
 
   async function load() {
@@ -41,6 +45,13 @@ export default function ReportDetail({ params }) {
       .eq('report_id', id)
       .order('signed_at', { ascending: true });
     setSignoffs(rows || []);
+
+    const { data: adj } = await supabase
+      .from('adjusting_entries')
+      .select('*')
+      .eq('engagement_id', data.engagement_id)
+      .order('proposed_at', { ascending: true });
+    setAdjustments(adj || []);
   }
 
   useEffect(() => { load(); }, [id]);
@@ -96,6 +107,40 @@ export default function ReportDetail({ params }) {
     setMessage('Summary added. Remember to save the draft.');
   }
 
+  // The AI drafts the findings from the saved run, the auditors' decisions
+  // and the adjusting entries. It's added to the text box for the preparer to edit.
+  async function draftFindingsWithAI() {
+    setBusy(true);
+    setMessage('');
+    try {
+      const { text } = await askAI(supabase, 'draft_findings', { engagement_id: report.engagement_id });
+      setBody((prev) => (prev ? `${prev}\n\n${text}` : text));
+      setAiDrafted(true);
+      setMessage('AI draft added. Read and edit it, then save the draft.');
+    } catch (err) {
+      setMessage(err.message);
+    }
+    setBusy(false);
+  }
+
+  // Client: accept or reject a proposed adjusting entry.
+  async function decideAdjustment(adjId, decision) {
+    setBusy(true);
+    setMessage('');
+    const { error } = await supabase.rpc('decide_adjustment', {
+      p_id: adjId,
+      p_decision: decision,
+      p_comment: adjComments[adjId] || '',
+    });
+    setBusy(false);
+    if (error) {
+      setMessage(`Error: ${error.message}`);
+      return;
+    }
+    setMessage(`Adjusting entry ${decision.toLowerCase()}.`);
+    load();
+  }
+
   async function sign(decision) {
     setBusy(true);
     setMessage('');
@@ -149,7 +194,11 @@ export default function ReportDetail({ params }) {
             <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
               <button onClick={handleSave} disabled={busy} style={{ padding: '8px 16px', cursor: 'pointer' }}>Save draft</button>
               <button onClick={insertTestingSummary} disabled={busy} style={{ padding: '8px 16px', cursor: 'pointer' }}>Add JE testing summary</button>
+              <button onClick={draftFindingsWithAI} disabled={busy} style={{ padding: '8px 16px', cursor: 'pointer', background: '#3b4cca', color: 'white', border: 'none', borderRadius: 4 }}>
+                {busy ? 'Working...' : 'Draft findings with AI'}
+              </button>
             </div>
+            {aiDrafted && <p style={{ fontSize: 12, color: '#666', marginBottom: 0 }}><span style={AI_BADGE_STYLE}>AI draft</span>The AI only uses this engagement&apos;s saved results. You&apos;re responsible for the final wording.</p>}
           </>
         ) : (
           <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{report.body || <span style={{ color: '#666' }}>(No content yet.)</span>}</div>
@@ -157,6 +206,47 @@ export default function ReportDetail({ params }) {
       </div>
 
       {message && <p style={{ color: message.startsWith('Error') ? 'crimson' : '#2a7' }}>{message}</p>}
+
+      {adjustments.length > 0 && (
+        <div style={{ background: 'white', padding: 20, borderRadius: 8, marginBottom: 16 }}>
+          <h3 style={{ marginTop: 0 }}>Proposed adjusting entries</h3>
+          {isClient(profile.role) && adjustments.some((a) => a.status === 'Proposed') && (
+            <p style={{ color: '#666', marginTop: 0 }}>Accept or reject each one before you approve the report.</p>
+          )}
+          {adjustments.map((a) => (
+            <div key={a.id} style={{ borderTop: '1px solid #eee', padding: '10px 0' }}>
+              <p style={{ margin: '0 0 4px' }}>
+                <strong>{a.description}</strong>{' '}
+                <span style={{ color: a.status === 'Accepted' ? '#2a7' : a.status === 'Rejected' ? 'crimson' : '#c60' }}>· {a.status}</span>
+              </p>
+              <table style={{ fontSize: 14, borderCollapse: 'collapse' }}>
+                <tbody>
+                  {a.lines.map((l, i) => (
+                    <tr key={i}>
+                      <td style={{ padding: '2px 12px 2px 0', paddingLeft: l.credit > 0 ? 24 : 0 }}>{l.account}</td>
+                      <td style={{ padding: '2px 12px', textAlign: 'right' }}>{l.debit > 0 ? Number(l.debit).toLocaleString('en-PH', { minimumFractionDigits: 2 }) : ''}</td>
+                      <td style={{ padding: '2px 12px', textAlign: 'right' }}>{l.credit > 0 ? Number(l.credit).toLocaleString('en-PH', { minimumFractionDigits: 2 }) : ''}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {a.client_comment && <p style={{ margin: '4px 0 0', color: '#666' }}>Client comment: {a.client_comment}</p>}
+              {isClient(profile.role) && a.status === 'Proposed' && report.status === 'For Client Approval' && (
+                <div style={{ marginTop: 6 }}>
+                  <input
+                    value={adjComments[a.id] || ''}
+                    onChange={(e) => setAdjComments({ ...adjComments, [a.id]: e.target.value })}
+                    placeholder="Comment (required if you reject)"
+                    style={{ padding: 6, width: '100%', boxSizing: 'border-box', marginBottom: 6 }}
+                  />
+                  <button onClick={() => decideAdjustment(a.id, 'Accepted')} disabled={busy} style={{ padding: '6px 14px', background: '#2a7', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer', marginRight: 8 }}>Accept</button>
+                  <button onClick={() => decideAdjustment(a.id, 'Rejected')} disabled={busy} style={{ padding: '6px 14px', background: 'white', color: 'crimson', border: '1px solid crimson', borderRadius: 4, cursor: 'pointer' }}>Reject</button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
 
       {step && (
         <div style={{ background: 'white', padding: 20, borderRadius: 8, marginBottom: 16 }}>

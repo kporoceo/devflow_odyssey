@@ -1,12 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
 import { createClient } from '../../../../lib/supabaseClient';
-import { groupJournalEntries } from '../../../../lib/jeTesting';
+import { groupJournalEntries, classifyAccount } from '../../../../lib/jeTesting';
+import { askAI, AI_BADGE_STYLE } from '../../../../lib/ai';
 
 const REQUIRED_COLUMNS = ['date', 'account', 'description', 'debit', 'credit'];
 
@@ -20,6 +21,22 @@ const OPTIONAL_COLUMNS = {
   source: ['source', 'transaction_type', 'source_type', 'type'],
   account_class: ['account_type', 'account_class', 'class'],
 };
+
+const FIELD_LABELS = {
+  date: 'Date (entry date) *',
+  account: 'Account *',
+  description: 'Description *',
+  debit: 'Debit *',
+  credit: 'Credit *',
+  effective_date: 'Effective Date (rule 2)',
+  entered_by: 'Prepared By (rule 5)',
+  je_number: 'JE No. (rule 6)',
+  source: 'Source (rule 7)',
+  account_class: 'Account Type (rules 5 and 6)',
+};
+const ALL_FIELDS = Object.keys(FIELD_LABELS);
+const CLASS_OPTIONS = ['Asset', 'Liability', 'Equity', 'Revenue', 'Expense', 'Suspense'];
+const SOURCE_LABELS = { File: 'from file', Saved: 'saved before', Guess: 'guess', AI: 'AI suggestion', Person: 'you chose' };
 
 // Extensions we actually know how to read.
 const SUPPORTED_EXTENSIONS = ['csv', 'xlsx', 'xls'];
@@ -74,13 +91,26 @@ function peso(n) {
 export default function UploadJEData({ params }) {
   const { id: engagementId } = params;
   const [fileName, setFileName] = useState('');
+  const [clientName, setClientName] = useState('');
+  const [rawHeaders, setRawHeaders] = useState([]);
+  const [rawRows, setRawRows] = useState([]);
+  const [sheetCount, setSheetCount] = useState(1);
+  const [mapping, setMapping] = useState({});        // ODYSSEY field -> client's column name
+  const [mappingByAI, setMappingByAI] = useState(false);
   const [parsedRows, setParsedRows] = useState([]);
-  const [foundOptional, setFoundOptional] = useState([]);
+  const [accountClasses, setAccountClasses] = useState({}); // account -> { class, source }
   const [validationErrors, setValidationErrors] = useState([]);
   const [status, setStatus] = useState('');
   const [saveMessage, setSaveMessage] = useState('');
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiMessage, setAiMessage] = useState('');
   const router = useRouter();
   const supabase = createClient();
+
+  useEffect(() => {
+    supabase.from('engagements').select('client_name').eq('id', engagementId).single()
+      .then(({ data }) => setClientName(data?.client_name || ''));
+  }, [engagementId]);
 
   function handleFileChange(e) {
     const file = e.target.files[0];
@@ -89,8 +119,9 @@ export default function UploadJEData({ params }) {
     setFileName(file.name);
     setValidationErrors([]);
     setParsedRows([]);
-    setFoundOptional([]);
     setSaveMessage('');
+    setAiMessage('');
+    setMappingByAI(false);
 
     const ext = getExtension(file.name);
 
@@ -114,7 +145,7 @@ export default function UploadJEData({ params }) {
       Papa.parse(file, {
         header: true,
         skipEmptyLines: true,
-        complete: (results) => validateAndPrepare(results.meta.fields || [], results.data),
+        complete: (results) => handleFileRead(results.meta.fields || [], results.data),
         error: (err) => {
           setValidationErrors([`Could not read file: ${err.message}`]);
           setStatus('error');
@@ -130,7 +161,7 @@ export default function UploadJEData({ params }) {
           const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
           const fields = rows.length > 0 ? Object.keys(rows[0]) : [];
 
-          validateAndPrepare(fields, rows, workbook.SheetNames.length);
+          handleFileRead(fields, rows, workbook.SheetNames.length);
         } catch (err) {
           setValidationErrors([`Could not read Excel file: ${err.message}`]);
           setStatus('error');
@@ -144,48 +175,95 @@ export default function UploadJEData({ params }) {
     }
   }
 
-  function validateAndPrepare(rawHeaders, dataRows, sheetCount = 1) {
-    const errors = [];
-    const normalizedHeaders = rawHeaders.map(normalizeHeader);
-
-    const missing = REQUIRED_COLUMNS.filter((col) => !normalizedHeaders.includes(col));
-    if (missing.length > 0) {
-      errors.push(
-        `Missing required column(s): ${missing.join(', ')}. Found columns: ${rawHeaders.join(', ') || '(none)'}`
-      );
-    }
-
-    if (dataRows.length === 0) {
-      errors.push('The file has no data rows.');
-    }
-
-    if (errors.length > 0) {
-      setValidationErrors(errors);
+  // Step 1: work out which column is which.
+  // First the usual names, then this client's saved matching (if every
+  // saved column is in this file). If a required one is still missing,
+  // the person matches them (with an AI suggestion if they want).
+  async function handleFileRead(headers, rows, sheets = 1) {
+    if (rows.length === 0) {
+      setValidationErrors(['The file has no data rows.']);
       setStatus('error');
       return;
     }
+    setRawHeaders(headers);
+    setRawRows(rows);
+    setSheetCount(sheets);
 
-    const headerMap = {};
-    rawHeaders.forEach((h) => { headerMap[normalizeHeader(h)] = h; });
-
-    // For each optional field, find the first header name the file uses.
-    const optionalMap = {};
+    const byNormalized = {};
+    headers.forEach((h) => { byNormalized[normalizeHeader(h)] = h; });
+    const auto = {};
+    REQUIRED_COLUMNS.forEach((f) => { if (byNormalized[f] !== undefined) auto[f] = byNormalized[f]; });
     Object.entries(OPTIONAL_COLUMNS).forEach(([field, names]) => {
-      const found = names.find((n) => headerMap[n] !== undefined);
-      if (found) optionalMap[field] = headerMap[found];
+      const found = names.find((n) => byNormalized[n] !== undefined);
+      if (found) auto[field] = byNormalized[found];
     });
 
+    let start = auto;
+    if (clientName) {
+      const { data: saved } = await supabase.from('column_maps').select('map').eq('client_name', clientName).maybeSingle();
+      if (saved?.map && Object.values(saved.map).every((h) => headers.includes(h))) start = saved.map;
+    }
+    setMapping(start);
+
+    if (REQUIRED_COLUMNS.every((f) => start[f])) {
+      await validateAndPrepare(start, headers, rows, sheets);
+    } else {
+      setStatus('mapping');
+    }
+  }
+
+  async function suggestMappingWithAI() {
+    setAiBusy(true);
+    setAiMessage('');
+    try {
+      const { mapping: suggested } = await askAI(supabase, 'map_columns', {
+        headers: rawHeaders,
+        sample_rows: rawRows.slice(0, 5),
+      });
+      const clean = {};
+      Object.entries(suggested).forEach(([field, header]) => { if (header && rawHeaders.includes(header)) clean[field] = header; });
+      setMapping(clean);
+      setMappingByAI(true);
+      setAiMessage('AI suggestion filled in. Check each one, then click Use these columns.');
+    } catch (err) {
+      setAiMessage(err.message);
+    }
+    setAiBusy(false);
+  }
+
+  async function confirmMapping() {
+    const missing = REQUIRED_COLUMNS.filter((f) => !mapping[f]);
+    if (missing.length > 0) {
+      setAiMessage(`Choose a column for: ${missing.map((f) => FIELD_LABELS[f].replace(' *', '')).join(', ')}.`);
+      return;
+    }
+    const used = Object.values(mapping).filter(Boolean);
+    if (new Set(used).size !== used.length) {
+      setAiMessage('Each column can only be used once.');
+      return;
+    }
+    // Remember it for this client's next upload.
+    if (clientName) {
+      await supabase.from('column_maps').upsert({ client_name: clientName, map: mapping, updated_at: new Date().toISOString() });
+    }
+    setAiMessage('');
+    await validateAndPrepare(mapping, rawHeaders, rawRows, sheetCount);
+  }
+
+  // Step 2: check every row using the chosen columns.
+  async function validateAndPrepare(map, headers, dataRows, sheets) {
+    setValidationErrors([]);
     const rowErrors = [];
     const cleanRows = [];
 
     dataRows.forEach((row, index) => {
       const rowNum = index + 2;
-      const cell = (header) => String(row[header] ?? '').trim();
-      const dateVal = cell(headerMap['date']);
-      const accountVal = cell(headerMap['account']);
-      const descVal = cell(headerMap['description']);
-      const debitVal = cell(headerMap['debit']).replace(/,/g, '');
-      const creditVal = cell(headerMap['credit']).replace(/,/g, '');
+      const cell = (field) => (map[field] ? String(row[map[field]] ?? '').trim() : '');
+      const dateVal = cell('date');
+      const accountVal = cell('account');
+      const descVal = cell('description');
+      const debitVal = cell('debit').replace(/,/g, '');
+      const creditVal = cell('credit').replace(/,/g, '');
 
       const entryDate = parseDateCell(dateVal);
       if (!entryDate) {
@@ -208,10 +286,10 @@ export default function UploadJEData({ params }) {
       }
 
       let effectiveDate = null;
-      if (optionalMap.effective_date && cell(optionalMap.effective_date)) {
-        effectiveDate = parseDateCell(cell(optionalMap.effective_date));
+      if (cell('effective_date')) {
+        effectiveDate = parseDateCell(cell('effective_date'));
         if (!effectiveDate) {
-          rowErrors.push(`Row ${rowNum}: invalid effective date ("${cell(optionalMap.effective_date)}")`);
+          rowErrors.push(`Row ${rowNum}: invalid effective date ("${cell('effective_date')}")`);
           return;
         }
       }
@@ -225,10 +303,10 @@ export default function UploadJEData({ params }) {
         description: descVal,
         debit,
         credit,
-        entered_by: optionalMap.entered_by ? cell(optionalMap.entered_by) || null : null,
-        je_number: optionalMap.je_number ? cell(optionalMap.je_number) || null : null,
-        source: optionalMap.source ? cell(optionalMap.source) || null : null,
-        account_class: optionalMap.account_class ? cell(optionalMap.account_class) || null : null,
+        entered_by: cell('entered_by') || null,
+        je_number: cell('je_number') || null,
+        source: cell('source') || null,
+        account_class: cell('account_class') || null,
       });
     });
 
@@ -240,7 +318,7 @@ export default function UploadJEData({ params }) {
       return;
     }
 
-    // Rule 6 integrity check: every journal entry must balance (debits = credits).
+    // Integrity check: every journal entry must balance (debits = credits).
     // This is a data error, not a risk flag, so nothing is saved if it fails.
     const balanceErrors = [];
     const hasJeNumbers = cleanRows.every((r) => r.je_number);
@@ -258,22 +336,74 @@ export default function UploadJEData({ params }) {
       return;
     }
 
-    if (sheetCount > 1) {
-      setSaveMessage(`Note: this file has ${sheetCount} sheets — only the first sheet was read.`);
-    }
+    setSaveMessage(sheets > 1 ? `Note: this file has ${sheets} sheets — only the first sheet was read.` : '');
 
-    setFoundOptional(Object.keys(optionalMap));
+    // Step 3: the account type of every account. Taken from the file if it
+    // has a valid one, else from this engagement's saved list, else a guess
+    // from the name. The person can change any of them, or ask the AI.
+    const { data: saved } = await supabase.from('account_classes').select('account, class').eq('engagement_id', engagementId);
+    const savedMap = Object.fromEntries((saved || []).map((a) => [a.account, a.class]));
+    const classes = {};
+    cleanRows.forEach((r) => {
+      if (classes[r.account]) return;
+      const fromFile = CLASS_OPTIONS.find((c) => c.toLowerCase() === String(r.account_class || '').toLowerCase());
+      if (fromFile) classes[r.account] = { class: fromFile, source: 'File' };
+      else if (savedMap[r.account]) classes[r.account] = { class: savedMap[r.account], source: 'Saved' };
+      else {
+        const guess = classifyAccount({ account: r.account });
+        classes[r.account] = { class: guess === 'Unclassified' ? '' : guess, source: 'Guess' };
+      }
+    });
+    setAccountClasses(classes);
     setParsedRows(cleanRows);
     setStatus('ready');
+  }
+
+  async function sortAccountsWithAI() {
+    setAiBusy(true);
+    setAiMessage('');
+    try {
+      const toAsk = Object.keys(accountClasses).filter((a) => accountClasses[a].source !== 'File');
+      const { classes } = await askAI(supabase, 'classify_accounts', { accounts: toAsk });
+      const next = { ...accountClasses };
+      Object.entries(classes).forEach(([account, cls]) => {
+        if (next[account] && next[account].source !== 'File') next[account] = { class: cls, source: 'AI' };
+      });
+      setAccountClasses(next);
+      setAiMessage(`AI suggested a type for ${Object.keys(classes).length} account(s). Check them before saving.`);
+    } catch (err) {
+      setAiMessage(err.message);
+    }
+    setAiBusy(false);
   }
 
   async function handleConfirmSave() {
     setStatus('saving');
     const { data: { user } } = await supabase.auth.getUser();
-    const rowsWithUploader = parsedRows.map((r) => ({ ...r, uploaded_by: user.id }));
+    const rowsWithUploader = parsedRows.map((r) => ({
+      ...r,
+      account_class: accountClasses[r.account]?.class || null,
+      uploaded_by: user.id,
+    }));
 
     const BATCH_SIZE = 500;
     try {
+      // Save the confirmed account types first, so the next upload reuses them.
+      const classRows = Object.entries(accountClasses)
+        .filter(([, v]) => v.class)
+        .map(([account, v]) => ({
+          engagement_id: engagementId,
+          account,
+          class: v.class,
+          source: v.source === 'Saved' ? 'Person' : v.source,
+          confirmed_by: user.id,
+          updated_at: new Date().toISOString(),
+        }));
+      if (classRows.length > 0) {
+        const { error } = await supabase.from('account_classes').upsert(classRows, { onConflict: 'engagement_id,account' });
+        if (error) throw error;
+      }
+
       for (let i = 0; i < rowsWithUploader.length; i += BATCH_SIZE) {
         const batch = rowsWithUploader.slice(i, i + BATCH_SIZE);
         const { error } = await supabase.from('journal_entries').insert(batch);
@@ -287,29 +417,27 @@ export default function UploadJEData({ params }) {
     }
   }
 
-  const OPTIONAL_LABELS = {
-    effective_date: 'Effective Date (rule 2)',
-    entered_by: 'Prepared By (rule 5)',
-    je_number: 'JE No. (rule 6)',
-    source: 'Source (rule 7)',
-    account_class: 'Account Type (rules 5 and 6)',
-  };
+  const foundOptional = Object.keys(OPTIONAL_COLUMNS).filter((f) => mapping[f]);
+  const accounts = Object.keys(accountClasses).sort();
+  const unclassified = accounts.filter((a) => !accountClasses[a].class).length;
+  const box = { background: 'white', padding: 20, borderRadius: 8, marginBottom: 16 };
+  const aiButton = { padding: '8px 14px', background: '#3b4cca', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer' };
 
   return (
-    <div style={{ maxWidth: 700, margin: '40px auto', padding: 24 }}>
+    <div style={{ maxWidth: 760, margin: '40px auto', padding: 24 }}>
       <Link href={`/engagements/${engagementId}`} style={{ display: 'inline-block', marginBottom: 16 }}>
         &larr; Back to Engagement
       </Link>
       <h1>Upload JE Data</h1>
       <p style={{ color: '#666' }}>
-        Upload a CSV or Excel file of journal entries. Required columns: <strong>Date, Account, Description, Debit, Credit</strong>.
-        &quot;Date&quot; is the date the entry was keyed in.
+        Upload the client&apos;s CSV or Excel file as it is. ODYSSEY needs a <strong>Date, Account, Description, Debit and Credit</strong> column.
+        If the client names them differently, you&apos;ll match them once and ODYSSEY remembers it for this client.
       </p>
       <p style={{ color: '#666', fontSize: 14 }}>
         Optional columns used by the testing rules: <strong>Effective Date, Prepared By, JE No., Source, Account Type</strong>.
       </p>
 
-      <div style={{ background: 'white', padding: 20, borderRadius: 8, marginBottom: 16 }}>
+      <div style={box}>
         <input type="file" accept=".csv,.xlsx,.xls" onChange={handleFileChange} />
         {fileName && <p style={{ color: '#666', marginTop: 8 }}>Selected: {fileName}</p>}
       </div>
@@ -322,25 +450,113 @@ export default function UploadJEData({ params }) {
           <ul style={{ marginTop: 8, marginBottom: 0 }}>
             {validationErrors.map((err, i) => <li key={i} style={{ color: '#a33', fontSize: 14 }}>{err}</li>)}
           </ul>
+          {rawHeaders.length > 0 && (
+            <button onClick={() => { setValidationErrors([]); setStatus('mapping'); }} style={{ marginTop: 12, padding: '6px 12px', cursor: 'pointer' }}>
+              Change column matching
+            </button>
+          )}
+        </div>
+      )}
+
+      {status === 'mapping' && (
+        <div style={box}>
+          <h3 style={{ marginTop: 0 }}>Match the columns</h3>
+          <p style={{ color: '#666', marginTop: 0 }}>
+            Pick which of the client&apos;s columns holds each field. * = required.
+          </p>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+            <tbody>
+              {ALL_FIELDS.map((field) => (
+                <tr key={field} style={{ borderTop: '1px solid #eee' }}>
+                  <td style={{ padding: '6px 4px' }}>{FIELD_LABELS[field]}</td>
+                  <td style={{ padding: '6px 4px' }}>
+                    <select
+                      value={mapping[field] || ''}
+                      onChange={(e) => setMapping({ ...mapping, [field]: e.target.value })}
+                      style={{ padding: 6, width: '100%' }}
+                    >
+                      <option value="">(none)</option>
+                      {rawHeaders.map((h) => <option key={h} value={h}>{h}</option>)}
+                    </select>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div style={{ display: 'flex', gap: 8, marginTop: 12, alignItems: 'center' }}>
+            <button onClick={suggestMappingWithAI} disabled={aiBusy} style={aiButton}>
+              {aiBusy ? 'Asking AI...' : 'Ask AI to match them'}
+            </button>
+            <button onClick={confirmMapping} disabled={aiBusy} style={{ padding: '8px 14px', background: '#111', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer' }}>
+              Use these columns
+            </button>
+          </div>
+          {mappingByAI && <p style={{ fontSize: 13, color: '#666', marginBottom: 0 }}><span style={AI_BADGE_STYLE}>AI</span>The AI only suggests. You confirm by clicking Use these columns.</p>}
+          {aiMessage && <p style={{ color: '#a70', marginBottom: 0 }}>{aiMessage}</p>}
         </div>
       )}
 
       {status === 'ready' && (
-        <div style={{ background: '#eaf6ea', border: '1px solid #8c8', padding: 16, borderRadius: 8, marginBottom: 16 }}>
-          {saveMessage && <p style={{ color: '#a70', margin: '0 0 8px' }}>{saveMessage}</p>}
-          <p style={{ margin: 0, marginBottom: 8 }}>
-            <strong>{parsedRows.length} rows</strong> passed validation, and every journal entry balances.
-          </p>
-          <p style={{ margin: 0, marginBottom: 12, fontSize: 14, color: '#555' }}>
-            Optional columns found: {foundOptional.length > 0 ? foundOptional.map((f) => OPTIONAL_LABELS[f]).join(', ') : 'none'}
-          </p>
+        <>
+          <div style={{ background: '#eaf6ea', border: '1px solid #8c8', padding: 16, borderRadius: 8, marginBottom: 16 }}>
+            {saveMessage && <p style={{ color: '#a70', margin: '0 0 8px' }}>{saveMessage}</p>}
+            <p style={{ margin: 0, marginBottom: 8 }}>
+              <strong>{parsedRows.length} rows</strong> passed validation, and every journal entry balances.
+            </p>
+            <p style={{ margin: 0, fontSize: 14, color: '#555' }}>
+              Optional columns found: {foundOptional.length > 0 ? foundOptional.map((f) => FIELD_LABELS[f]).join(', ') : 'none'}
+              {' · '}
+              <button onClick={() => setStatus('mapping')} style={{ background: 'none', border: 'none', color: '#3b4cca', cursor: 'pointer', padding: 0 }}>
+                change column matching
+              </button>
+            </p>
+          </div>
+
+          <div style={box}>
+            <h3 style={{ marginTop: 0 }}>Account types</h3>
+            <p style={{ color: '#666', marginTop: 0, fontSize: 14 }}>
+              Rules 5 and 6 need to know what kind of account each one is. Check the list, change anything that&apos;s wrong, then save.
+              {unclassified > 0 && <strong style={{ color: '#a70' }}> {unclassified} account(s) still have no type.</strong>}
+            </p>
+            <button onClick={sortAccountsWithAI} disabled={aiBusy} style={{ ...aiButton, marginBottom: 12 }}>
+              {aiBusy ? 'Asking AI...' : 'Ask AI to sort the accounts'}
+            </button>
+            {aiMessage && <p style={{ color: '#a70', marginTop: 0 }}>{aiMessage}</p>}
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+              <tbody>
+                {accounts.map((account) => {
+                  const v = accountClasses[account];
+                  return (
+                    <tr key={account} style={{ borderTop: '1px solid #eee' }}>
+                      <td style={{ padding: '6px 4px' }}>{account}</td>
+                      <td style={{ padding: '6px 4px' }}>
+                        <select
+                          value={v.class}
+                          onChange={(e) => setAccountClasses({ ...accountClasses, [account]: { class: e.target.value, source: 'Person' } })}
+                          style={{ padding: 4 }}
+                        >
+                          <option value="">(choose)</option>
+                          {CLASS_OPTIONS.map((c) => <option key={c} value={c}>{c}</option>)}
+                        </select>
+                      </td>
+                      <td style={{ padding: '6px 4px', color: '#666', fontSize: 12 }}>
+                        {v.source === 'AI' ? <span style={AI_BADGE_STYLE}>AI suggestion</span> : SOURCE_LABELS[v.source]}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
           <button
             onClick={handleConfirmSave}
-            style={{ padding: '10px 20px', background: '#111', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer' }}
+            disabled={aiBusy}
+            style={{ padding: '10px 20px', background: '#111', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer', marginBottom: 16 }}
           >
             Confirm &amp; Save to Engagement
           </button>
-        </div>
+        </>
       )}
 
       {status === 'saving' && <p>Saving to database...</p>}
