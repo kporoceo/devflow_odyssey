@@ -4,19 +4,19 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '../../lib/supabaseClient';
-import { Spinner } from '../../components/ui';
+import { BackLink, Spinner } from '../../components/ui';
 
 function EngagementList({ items }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+    <div className="stack" style={{ gap: 12 }}>
       {items.map((eng) => (
-        <Link key={eng.id} href={`/engagements/${eng.id}`}>
-          <div style={{ background: 'white', padding: 12, borderRadius: 6, display: 'flex', justifyContent: 'space-between', cursor: 'pointer' }}>
+        <Link key={eng.id} href={`/engagements/${eng.id}`} className="link-card">
+          <div className="row-between">
             <div>
-              <strong>{eng.engagement_name}</strong>
-              <p style={{ margin: 0, color: '#666' }}>{eng.client_name}</p>
+              <p className="link-card-title">{eng.engagement_name}</p>
+              <p className="link-card-text">{eng.client_name}</p>
             </div>
-            <span style={{ alignSelf: 'center', color: eng.status === 'Active' ? '#2a7' : '#888' }}>{eng.status}</span>
+            <span className={eng.status === 'Active' ? 'badge badge-success' : 'badge'}>{eng.status}</span>
           </div>
         </Link>
       ))}
@@ -80,52 +80,56 @@ export default function Engagements() {
   }
 
   return (
-    <div style={{ maxWidth: 700, margin: '40px auto', padding: 24 }}>
-      <Link href="/dashboard" style={{ display: 'inline-block', marginBottom: 16 }}>&larr; Back to Dashboard</Link>
-      <h1>Audit Engagements</h1>
+    <div className="page page-narrow">
+      <BackLink href="/dashboard">Back to Dashboard</BackLink>
+      <div className="page-header">
+        <div>
+          <h1 className="page-title">Audit Engagements</h1>
+        </div>
+      </div>
 
-      <form onSubmit={handleCreate} style={{ background: 'white', padding: 16, borderRadius: 8, marginBottom: 24 }}>
-        <h3 style={{ marginTop: 0 }}>Create New Engagement</h3>
-        <div style={{ marginBottom: 12 }}>
-          <label style={{ display: 'block', marginBottom: 4 }}>Client Name</label>
+      <form onSubmit={handleCreate} className="card" style={{ marginBottom: 40 }}>
+        <h2 className="card-title" style={{ marginBottom: 20 }}>Create New Engagement</h2>
+        <div className="field">
+          <label>Client Name</label>
           <input
             type="text"
             value={clientName}
             onChange={(e) => setClientName(e.target.value)}
             required
-            style={{ width: '100%', padding: 8, boxSizing: 'border-box' }}
           />
         </div>
-        <div style={{ marginBottom: 12 }}>
-          <label style={{ display: 'block', marginBottom: 4 }}>Engagement Name</label>
+        <div className="field">
+          <label>Engagement Name</label>
           <input
             type="text"
             value={engagementName}
             onChange={(e) => setEngagementName(e.target.value)}
             required
             placeholder="e.g. FY2026 Annual Audit"
-            style={{ width: '100%', padding: 8, boxSizing: 'border-box' }}
           />
         </div>
-        {error && <p style={{ color: 'crimson' }}>{error}</p>}
-        <button type="submit" style={{ padding: '8px 16px', background: '#111', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer' }}>
-          Create Engagement
-        </button>
+        {error && <div className="alert alert-danger" style={{ marginBottom: 16 }}>{error}</div>}
+        <div className="form-actions">
+          <button type="submit" className="btn">
+            Create Engagement
+          </button>
+        </div>
       </form>
 
-      <h3>Active engagements</h3>
+      <h2 style={{ marginBottom: 16 }}>Active engagements</h2>
       {loading ? (
-        <p style={{ display: 'flex', gap: 8, alignItems: 'center' }}><Spinner /> Loading…</p>
+        <p className="loading" style={{ padding: 0 }}><Spinner /> Loading…</p>
       ) : active.length === 0 ? (
-        <p style={{ color: '#666' }}>No active engagements. Create one above.</p>
+        <p className="muted">No active engagements. Create one above.</p>
       ) : (
         <EngagementList items={active} />
       )}
 
       {inactive.length > 0 && (
-        <details style={{ marginTop: 24 }}>
-          <summary style={{ cursor: 'pointer', fontWeight: 600 }}>Inactive engagements ({inactive.length})</summary>
-          <p style={{ color: '#666', fontSize: 14 }}>Read-only: no new uploads or test runs. Firm Leadership can reactivate them.</p>
+        <details style={{ marginTop: 40 }}>
+          <summary style={{ fontWeight: 600 }}>Inactive engagements ({inactive.length})</summary>
+          <p className="muted" style={{ fontSize: 14, margin: '12px 0 16px' }}>Read-only: no new uploads or test runs. Firm Leadership can reactivate them.</p>
           <EngagementList items={inactive} />
         </details>
       )}

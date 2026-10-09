@@ -177,7 +177,7 @@ export default function Analytics({ params }) {
   // The AI's notes describe the numbers it was given, so clear them when the view changes.
   useEffect(() => { setAiNotes({}); }, [filters, threshold]);
 
-  if (loading) return <p style={{ padding: 24, display: 'flex', gap: 8, alignItems: 'center' }}><Spinner /> Loading the journal entries…</p>;
+  if (loading) return <p className="loading"><Spinner /> Loading the journal entries…</p>;
 
   const total = jes.reduce((s, j) => s + j.amount, 0);
   const months = monthRange([...new Set(jes.map((j) => j.month))]);
@@ -325,15 +325,15 @@ export default function Analytics({ params }) {
     return {
       third: { title: 'JEs just under the threshold', value: count(under.length), sub: `${pesoShort(low)} to ${pesoShort(threshold)}` },
       extraLeft: (
-        <div style={{ background: 'white', borderRadius: 6, padding: 10, marginBottom: 12, fontSize: 13 }}>
+        <div className="card card-tight" style={{ marginBottom: 12 }}>
           <label>
             Threshold (₱)
             <input type="number" min="0" step="10000" value={threshold} onChange={(e) => setThreshold(Number(e.target.value) || 0)}
-              style={{ width: '100%', padding: 6, boxSizing: 'border-box', marginTop: 4 }} />
+              style={{ marginTop: 6 }} />
           </label>
           <input type="range" min="10000" max={Math.max(1000000, threshold)} step="10000" value={threshold}
-            onChange={(e) => setThreshold(Number(e.target.value))} style={{ width: '100%', marginTop: 8 }} />
-          <p style={{ color: '#666', margin: '6px 0 0' }}>Shows JEs between 80% and 100% of this amount, e.g. just under an approval limit.</p>
+            onChange={(e) => setThreshold(Number(e.target.value))} style={{ width: '100%', marginTop: 12 }} />
+          <p className="hint" style={{ marginBottom: 0 }}>Shows JEs between 80% and 100% of this amount, e.g. just under an approval limit.</p>
         </div>
       ),
       body: (
@@ -530,9 +530,9 @@ export default function Analytics({ params }) {
   }
 
   const filterBox = (key, label, values, format = (v) => v) => (
-    <label style={{ display: 'flex', flexDirection: 'column', fontSize: 12, fontWeight: 600, color: 'white', gap: 4, minWidth: 130, flex: 1 }}>
+    <label style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 140, flex: 1, margin: 0 }}>
       {label}
-      <select value={filters[key]} onChange={(e) => setFilters({ ...filters, [key]: e.target.value })} style={{ padding: 4, fontWeight: 400 }}>
+      <select value={filters[key]} onChange={(e) => setFilters({ ...filters, [key]: e.target.value })} style={{ fontWeight: 400 }}>
         <option value={ALL}>{ALL}</option>
         {values.map((v) => <option key={v} value={v}>{format(v)}</option>)}
       </select>
@@ -544,78 +544,74 @@ export default function Analytics({ params }) {
   const filtered = Object.values(filters).some((v) => v !== ALL);
 
   return (
-    <div style={{ padding: 24, maxWidth: 1250, margin: '0 auto' }}>
+    <div className="page" style={{ maxWidth: 1280 }}>
       <BackLink href={`/engagements/${engagementId}`}>Back to Engagement</BackLink>
 
       {entries.length === 0 ? (
-        <p>No journal entries yet. Upload JE data first.</p>
+        <p className="muted">No journal entries yet. Upload JE data first.</p>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: '170px 1fr', gap: 16, alignItems: 'start' }}>
-          {/* Page list, like Power BI's "Pages" pane */}
-          <div style={{ background: 'white', borderRadius: 6, padding: 8, position: 'sticky', top: 12 }}>
-            <div style={{ fontWeight: 600, padding: '4px 8px 8px' }}>Pages</div>
-            {PAGES.map((p) => (
-              <button key={p} onClick={() => { setPage(p); setAiMessage(''); }}
-                style={{ display: 'block', width: '100%', textAlign: 'left', padding: '7px 8px', border: 'none', cursor: 'pointer', borderRadius: 4,
-                  background: page === p ? '#e8eefb' : 'transparent', borderLeft: page === p ? '3px solid #1f4fa3' : '3px solid transparent', fontSize: 14 }}>
-                {p}
-              </button>
-            ))}
-            <hr style={{ border: 'none', borderTop: '1px solid #eee', margin: '8px 0' }} />
-            <button onClick={downloadCSV} style={{ width: '100%', padding: '7px 8px', cursor: 'pointer', fontSize: 13 }}>
+        <>
+          <div className="page-header">
+            <div>
+              <h1 className="page-title">Journal Entries · {page}</h1>
+              <p className="page-subtitle">{engagement?.client_name} — {engagement?.engagement_name}</p>
+            </div>
+            <button className="btn btn-secondary" onClick={downloadCSV}>
               Download CSV
             </button>
           </div>
 
-          <div style={{ minWidth: 0 }}>
-            <div style={{ background: '#1f4fa3', color: 'white', borderRadius: '6px 6px 0 0', padding: '10px 14px' }}>
-              <div style={{ fontSize: 22, fontWeight: 700 }}>Journal Entries · {page}</div>
-              <div style={{ fontSize: 13, opacity: 0.85 }}>{engagement?.client_name} — {engagement?.engagement_name}</div>
-            </div>
-            <div style={{ background: '#1d2531', padding: '10px 14px', borderRadius: '0 0 6px 6px', display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 16 }}>
-              {filterBox('source', 'Source', options.source)}
-              {filterBox('day', 'Posted day of week', WEEK_ORDER.map((d) => DAYS[d]))}
-              {filterBox('preparer', 'Prepared by', options.preparer)}
-              {filterBox('month', 'Accounting month', options.month, monthLabel)}
-              {filterBox('accountType', 'Account type', options.accountType)}
-              {filtered && (
-                <button onClick={() => setFilters({ source: ALL, day: ALL, preparer: ALL, month: ALL, accountType: ALL })}
-                  style={{ alignSelf: 'flex-end', padding: '4px 10px', cursor: 'pointer' }}>Clear</button>
-              )}
-            </div>
+          {/* Page list, like Power BI's "Pages" pane */}
+          <div className="eyebrow">Pages</div>
+          <div className="tabs" role="tablist">
+            {PAGES.map((p) => (
+              <button key={p} className={page === p ? 'tab active' : 'tab'} onClick={() => { setPage(p); setAiMessage(''); }}>
+                {p}
+              </button>
+            ))}
+          </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(170px, 210px) 1fr', gap: 16, alignItems: 'start' }}>
-              <div>
-                <Tile {...first} />
-                <Tile {...second} />
-                <Tile {...view.third} />
-                {view.extraLeft}
+          <div className="card card-tight" style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: 24 }}>
+            {filterBox('source', 'Source', options.source)}
+            {filterBox('day', 'Posted day of week', WEEK_ORDER.map((d) => DAYS[d]))}
+            {filterBox('preparer', 'Prepared by', options.preparer)}
+            {filterBox('month', 'Accounting month', options.month, monthLabel)}
+            {filterBox('accountType', 'Account type', options.accountType)}
+            {filtered && (
+              <button className="btn btn-ghost" onClick={() => setFilters({ source: ALL, day: ALL, preparer: ALL, month: ALL, accountType: ALL })}>Clear</button>
+            )}
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(180px, 220px) 1fr', gap: 20, alignItems: 'start' }}>
+            <div>
+              <Tile {...first} />
+              <Tile {...second} />
+              <Tile {...view.third} />
+              {view.extraLeft}
+            </div>
+            <div style={{ minWidth: 0 }}>
+              <div className="card card-tight" style={{ marginBottom: 16 }}>
+                {aiNotes[page] ? (
+                  <ul style={{ margin: 0, paddingLeft: 18, fontSize: 14 }}>
+                    {aiNotes[page].map((n, i) => <li key={i} style={{ marginBottom: 6 }}><ClaudeTag />{n}</li>)}
+                  </ul>
+                ) : (
+                  <button className="btn btn-ai" onClick={askForNote} disabled={aiBusy}>
+                    <BusyLabel busy={aiBusy} busyText="Claude is reading this page…">Ask Claude what stands out on this page</BusyLabel>
+                  </button>
+                )}
+                {aiMessage && <div className="alert alert-warning" style={{ marginTop: 12 }}>{aiMessage}</div>}
+                {aiNotes[page] && (
+                  <p className="hint" style={{ marginBottom: 0 }}>
+                    Claude only sees this page&apos;s totals, not the client&apos;s file. Check anything it points out before relying on it.{' '}
+                    <button className="btn btn-ai btn-sm" onClick={askForNote} disabled={aiBusy} style={{ marginLeft: 4 }}>Ask again</button>
+                  </p>
+                )}
               </div>
-              <div style={{ minWidth: 0 }}>
-                <div style={{ background: 'white', borderRadius: 6, padding: 12, marginBottom: 16 }}>
-                  {aiNotes[page] ? (
-                    <ul style={{ margin: 0, paddingLeft: 18, fontSize: 14 }}>
-                      {aiNotes[page].map((n, i) => <li key={i} style={{ marginBottom: 4 }}><ClaudeTag />{n}</li>)}
-                    </ul>
-                  ) : (
-                    <button onClick={askForNote} disabled={aiBusy}
-                      style={{ padding: '7px 14px', background: '#3b4cca', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer' }}>
-                      <BusyLabel busy={aiBusy} busyText="Claude is reading this page…">Ask Claude what stands out on this page</BusyLabel>
-                    </button>
-                  )}
-                  {aiMessage && <p style={{ color: '#a70', margin: '6px 0 0' }}>{aiMessage}</p>}
-                  {aiNotes[page] && (
-                    <p style={{ fontSize: 12, color: '#666', margin: '6px 0 0' }}>
-                      Claude only sees this page&apos;s totals, not the client&apos;s file. Check anything it points out before relying on it.{' '}
-                      <button onClick={askForNote} disabled={aiBusy} style={{ background: 'none', border: 'none', color: '#3b4cca', cursor: 'pointer', padding: 0 }}>Ask again</button>
-                    </p>
-                  )}
-                </div>
-                {view.body}
-              </div>
+              {view.body}
             </div>
           </div>
-        </div>
+        </>
       )}
     </div>
   );

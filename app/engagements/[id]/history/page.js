@@ -69,87 +69,94 @@ export default function TestingHistory({ params }) {
     });
   }
 
-  if (loading) return <p style={{ padding: 24, display: 'flex', gap: 8, alignItems: 'center' }}><Spinner /> Loading…</p>;
+  if (loading) return <p className="loading"><Spinner /> Loading…</p>;
 
   return (
-    <div style={{ maxWidth: 800, margin: '40px auto', padding: 24 }}>
+    <div className="page page-narrow" style={{ maxWidth: 960 }}>
       <BackLink href={`/engagements/${engagementId}`}>Back to Engagement</BackLink>
-      <h1>Testing History &amp; Audit Trail</h1>
-      <p style={{ color: '#666' }}>
-        A record of every JE testing run performed on this engagement — who ran it, when, and what was flagged.
-      </p>
+      <div className="page-header">
+        <div>
+          <h1 className="page-title">Testing History &amp; Audit Trail</h1>
+          <p className="page-subtitle">
+            A record of every JE testing run performed on this engagement — who ran it, when, and what was flagged.
+          </p>
+        </div>
+      </div>
 
       {runs.length === 0 ? (
-        <div style={{ background: '#fff8e6', border: '1px solid #e8c468', padding: 16, borderRadius: 8 }}>
+        <div className="alert alert-warning">
           No testing runs yet. <Link href={`/engagements/${engagementId}/testing`}>Run JE Testing</Link> to create the first entry in this audit trail.
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div className="stack">
           {runs.map((run) => (
-            <div key={run.id} style={{ background: 'white', borderRadius: 8, overflow: 'hidden' }}>
+            <div key={run.id} className="card" style={{ padding: 0, overflow: 'hidden' }}>
               <div
                 onClick={() => toggleRun(run.id)}
-                style={{ padding: 16, cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+                className="row-between"
+                style={{ padding: '18px 24px', cursor: 'pointer' }}
               >
                 <div>
-                  <p style={{ margin: 0, fontWeight: 'bold' }}>{formatDate(run.run_at)}</p>
-                  <p style={{ margin: '4px 0 0', color: '#666', fontSize: 14 }}>
+                  <p style={{ margin: 0, fontWeight: 600 }}>{formatDate(run.run_at)}</p>
+                  <p className="text-2 small" style={{ margin: '4px 0 0' }}>
                     Run by {run.profiles?.full_name || 'Unknown'} ({run.profiles?.role || 'n/a'})
                   </p>
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   <p style={{ margin: 0 }}>
-                    <span style={{ color: run.flagged_count > 0 ? 'crimson' : '#2a7', fontWeight: 'bold' }}>
+                    <span className={run.flagged_count > 0 ? 'text-danger' : 'text-success'} style={{ fontWeight: 600 }}>
                       {run.flagged_count}
                     </span> / {run.total_entries} flagged
                   </p>
-                  <p style={{ margin: '4px 0 0', color: '#999', fontSize: 13 }}>
+                  <p className="small" style={{ margin: '4px 0 0', color: 'var(--link)' }}>
                     {expandedRunId === run.id ? 'Hide details ▲' : 'View details ▼'}
                   </p>
                 </div>
               </div>
 
               {expandedRunId === run.id && (
-                <div style={{ borderTop: '1px solid #eee', padding: 16, background: '#fafafa' }}>
+                <div style={{ borderTop: '1px solid var(--border)', padding: '20px 24px', background: 'var(--surface-2)' }}>
                   {loadingFlags && !flagsByRun[run.id] ? (
-                    <p style={{ display: 'flex', gap: 8, alignItems: 'center' }}><Spinner /> Loading flags…</p>
+                    <p className="text-2" style={{ display: 'flex', gap: 8, alignItems: 'center', margin: 0 }}><Spinner /> Loading flags…</p>
                   ) : flagsByRun[run.id]?.length === 0 ? (
-                    <p style={{ color: '#666', margin: 0 }}>No entries were flagged in this run.</p>
+                    <p className="muted" style={{ margin: 0 }}>No entries were flagged in this run.</p>
                   ) : (
-                    <div style={{ overflowX: 'auto' }}>
-                      <p style={{ margin: '0 0 8px', fontSize: 13, color: '#666' }}>Click a JE number to see the whole entry, its decision and any adjusting entry.</p>
-                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, background: 'white' }}>
-                        <thead>
-                          <tr style={{ textAlign: 'left', color: '#666' }}>
-                            {['JE No.', 'Date', 'Account title', 'Description', 'Amount (₱)', 'Rule', 'Reason'].map((h) => (
-                              <th key={h} style={{ padding: '6px', fontWeight: 500, whiteSpace: 'nowrap', textAlign: h.startsWith('Amount') ? 'right' : 'left' }}>{h}</th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {flagsByRun[run.id]?.map((flag) => {
-                            const je = flag.journal_entries || {};
-                            const amount = Number(je.debit) > 0 ? Number(je.debit) : Number(je.credit || 0);
-                            return (
-                              <tr key={flag.id} style={{ borderTop: '1px solid #eee', verticalAlign: 'top' }}>
-                                <td style={{ padding: 6, whiteSpace: 'nowrap' }}>
-                                  <Link href={`/engagements/${engagementId}/entries/${flag.journal_entry_id}`}>{je.je_number || 'Open'}</Link>
-                                </td>
-                                <td style={{ padding: 6, whiteSpace: 'nowrap' }}>{je.entry_date}</td>
-                                <td style={{ padding: 6 }}>{je.account}</td>
-                                <td style={{ padding: 6, color: '#555' }}>{je.description}</td>
-                                <td style={{ padding: 6, textAlign: 'right', whiteSpace: 'nowrap' }}>
-                                  {amount.toLocaleString('en-PH', { minimumFractionDigits: 2 })} {Number(je.debit) > 0 ? 'Dr' : 'Cr'}
-                                </td>
-                                <td style={{ padding: 6 }}>
-                                  <span style={{ background: '#fdeaea', color: '#a33', padding: '2px 8px', borderRadius: 4, fontSize: 12, whiteSpace: 'nowrap' }}>{RULE_LABELS[flag.rule] || flag.rule}</span>
-                                </td>
-                                <td style={{ padding: 6, color: '#666' }}>{flag.reason}</td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
+                    <div>
+                      <p className="hint" style={{ margin: '0 0 12px' }}>Click a JE number to see the whole entry, its decision and any adjusting entry.</p>
+                      <div className="table-wrap">
+                        <table className="compact">
+                          <thead>
+                            <tr>
+                              {['JE No.', 'Date', 'Account title', 'Description', 'Amount (₱)', 'Rule', 'Reason'].map((h) => (
+                                <th key={h} className={h.startsWith('Amount') ? 'num' : undefined}>{h}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {flagsByRun[run.id]?.map((flag) => {
+                              const je = flag.journal_entries || {};
+                              const amount = Number(je.debit) > 0 ? Number(je.debit) : Number(je.credit || 0);
+                              return (
+                                <tr key={flag.id}>
+                                  <td style={{ whiteSpace: 'nowrap' }}>
+                                    <Link href={`/engagements/${engagementId}/entries/${flag.journal_entry_id}`}>{je.je_number || 'Open'}</Link>
+                                  </td>
+                                  <td style={{ whiteSpace: 'nowrap' }}>{je.entry_date}</td>
+                                  <td>{je.account}</td>
+                                  <td className="text-2">{je.description}</td>
+                                  <td className="num">
+                                    {amount.toLocaleString('en-PH', { minimumFractionDigits: 2 })} {Number(je.debit) > 0 ? 'Dr' : 'Cr'}
+                                  </td>
+                                  <td>
+                                    <span className="badge badge-danger">{RULE_LABELS[flag.rule] || flag.rule}</span>
+                                  </td>
+                                  <td className="text-2">{flag.reason}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
                   )}
                 </div>

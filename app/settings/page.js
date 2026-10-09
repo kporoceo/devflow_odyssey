@@ -36,27 +36,48 @@ export default function Settings() {
   const current = profile.theme || 'system';
 
   return (
-    <div style={{ maxWidth: 600, margin: '40px auto', padding: 24 }}>
+    <div className="page page-narrow">
       <BackLink href={homeFor(profile.role)}>Back to {homeLabel(profile.role)}</BackLink>
-      <h1>Settings</h1>
-
-      <div style={{ background: 'white', padding: 20, borderRadius: 8, marginBottom: 16 }}>
-        <strong>Appearance</strong>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}>
-          {THEMES.map((t) => (
-            <label key={t.value} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-              <input type="radio" name="theme" checked={current === t.value} onChange={() => chooseTheme(t.value)} />
-              {t.label}
-            </label>
-          ))}
+      <div className="page-header">
+        <div>
+          <h1 className="page-title">Settings</h1>
         </div>
-        {message && <p style={{ color: message.startsWith('Error') ? 'crimson' : '#2a7', marginBottom: 0 }}>{message}</p>}
       </div>
 
-      <div style={{ background: 'white', padding: 20, borderRadius: 8 }}>
-        <strong>Sessions</strong>
-        <p style={{ color: '#666', margin: '4px 0 12px' }}>Sign out on every computer and phone where you&apos;re logged in.</p>
-        <button onClick={signOutEverywhere} style={{ padding: '8px 16px', cursor: 'pointer' }}>Sign out everywhere</button>
+      <div className="stack">
+        <div className="card">
+          <h2 className="card-title" style={{ marginBottom: 16 }}>Appearance</h2>
+          <div className="grid-3" style={{ gap: 12 }}>
+            {THEMES.map((t) => {
+              const selected = current === t.value;
+              return (
+                <label
+                  key={t.value}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', margin: 0,
+                    padding: '12px 14px', borderRadius: 'var(--radius-sm)',
+                    border: `1px solid ${selected ? 'var(--accent)' : 'var(--border-strong)'}`,
+                    background: selected ? 'var(--accent-soft)' : 'var(--surface)',
+                    color: 'var(--text)', fontSize: 14, fontWeight: selected ? 600 : 500,
+                    boxShadow: selected ? 'inset 3px 0 0 var(--accent)' : 'none',
+                  }}
+                >
+                  <input type="radio" name="theme" checked={current === t.value} onChange={() => chooseTheme(t.value)} />
+                  {t.label}
+                </label>
+              );
+            })}
+          </div>
+          {message && <div className={`alert ${message.startsWith('Error') ? 'alert-danger' : 'alert-success'}`} style={{ marginTop: 16 }}>{message}</div>}
+        </div>
+
+        <div className="card row-between">
+          <div>
+            <h2 className="card-title">Sessions</h2>
+            <p className="card-subtitle" style={{ margin: 0 }}>Sign out on every computer and phone where you&apos;re logged in.</p>
+          </div>
+          <button onClick={signOutEverywhere} className="btn btn-danger-outline">Sign out everywhere</button>
+        </div>
       </div>
     </div>
   );

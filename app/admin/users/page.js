@@ -96,113 +96,129 @@ export default function ManageUsers() {
     return eng ? `${eng.client_name} — ${eng.engagement_name}` : '';
   };
 
-  const input = { padding: 8, boxSizing: 'border-box', width: '100%' };
+  const fieldInput = { marginTop: 6 };
 
   return (
-    <div style={{ maxWidth: 960, margin: '40px auto', padding: 24 }}>
-      <h1>Manage Users</h1>
-      <p style={{ color: '#666' }}>Only the System Administrator creates accounts. Each new account gets a default password, which the person must change at first login. The System Administrator can&apos;t open engagements, journal entries or reports.</p>
+    <div className="page">
+      <div className="page-header">
+        <div>
+          <h1 className="page-title">Manage Users</h1>
+          <p className="page-subtitle">Only the System Administrator creates accounts. Each new account gets a default password, which the person must change at first login. The System Administrator can&apos;t open engagements, journal entries or reports.</p>
+        </div>
+      </div>
 
-      <form onSubmit={handleCreate} style={{ background: 'white', padding: 20, borderRadius: 8, marginBottom: 16 }}>
-        <h3 style={{ marginTop: 0 }}>Create account</h3>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-          <label>Full name<input style={input} value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} required /></label>
-          <label>Email<input style={input} type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required /></label>
-          <label>Role
-            <select style={input} value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
-              {ALL_ROLES.map((r) => <option key={r} value={r}>{r} ({teamOf(r)})</option>)}
-            </select>
-          </label>
-          {form.role === CLIENT_ROLE && (
-            <label>Client&apos;s engagement
-              <select style={input} value={form.client_engagement_id} onChange={(e) => setForm({ ...form, client_engagement_id: e.target.value })} required>
-                <option value="">Choose…</option>
-                {engagements.map((eng) => <option key={eng.id} value={eng.id}>{eng.client_name} — {eng.engagement_name}</option>)}
+      <div className="stack-lg">
+        <form onSubmit={handleCreate} className="card card-accent">
+          <h2 className="card-title" style={{ marginBottom: 16 }}>Create account</h2>
+          <div className="grid-2">
+            <label style={{ marginBottom: 0 }}>Full name<input style={fieldInput} value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} required /></label>
+            <label style={{ marginBottom: 0 }}>Email<input style={fieldInput} type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required /></label>
+            <label style={{ marginBottom: 0 }}>Role
+              <select style={fieldInput} value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
+                {ALL_ROLES.map((r) => <option key={r} value={r}>{r} ({teamOf(r)})</option>)}
               </select>
             </label>
-          )}
-        </div>
-        <button type="submit" disabled={busy} style={{ marginTop: 16, padding: '10px 20px', background: '#111', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer' }}>
-          <BusyLabel busy={busy} busyText="Creating…">Create account</BusyLabel>
-        </button>
-      </form>
+            {form.role === CLIENT_ROLE && (
+              <label style={{ marginBottom: 0 }}>Client&apos;s engagement
+                <select style={fieldInput} value={form.client_engagement_id} onChange={(e) => setForm({ ...form, client_engagement_id: e.target.value })} required>
+                  <option value="">Choose…</option>
+                  {engagements.map((eng) => <option key={eng.id} value={eng.id}>{eng.client_name} — {eng.engagement_name}</option>)}
+                </select>
+              </label>
+            )}
+          </div>
+          <div className="form-actions" style={{ marginTop: 20 }}>
+            <button type="submit" disabled={busy} className="btn">
+              <BusyLabel busy={busy} busyText="Creating…">Create account</BusyLabel>
+            </button>
+          </div>
+        </form>
 
-      {error && <p style={{ color: 'crimson' }}>{error}</p>}
-      {notice && (
-        <div style={{ background: '#eaf6ea', border: '1px solid #8c8', padding: 16, borderRadius: 8, marginBottom: 16 }}>
-          <p style={{ margin: 0 }}>{notice.text}</p>
-          {notice.password && (
-            <p style={{ margin: '8px 0 0' }}>
-              Default password: <code style={{ fontSize: 18, background: 'white', padding: '2px 8px' }}>{notice.password}</code>
-              <br /><span style={{ fontSize: 13, color: '#666' }}>It is shown only once. Copy it now.</span>
-            </p>
-          )}
-        </div>
-      )}
+        {(error || notice) && (
+          <div className="stack">
+            {error && <div className="alert alert-danger">{error}</div>}
+            {notice && (
+              <div className="alert alert-success">
+                <p style={{ margin: 0 }}>{notice.text}</p>
+                {notice.password && (
+                  <p style={{ margin: '10px 0 0' }}>
+                    Default password: <code style={{ fontSize: 17, fontWeight: 500, background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 'var(--radius-xs)', padding: '2px 8px', userSelect: 'all' }}>{notice.password}</code>
+                    <br /><span className="small text-2">It is shown only once. Copy it now.</span>
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
-      <div style={{ background: 'white', borderRadius: 8, overflowX: 'auto' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
-          <thead>
-            <tr style={{ textAlign: 'left', borderBottom: '2px solid #eee' }}>
-              <th style={{ padding: 10 }}>Name</th>
-              <th style={{ padding: 10 }}>Role</th>
-              <th style={{ padding: 10 }}>Status</th>
-              <th style={{ padding: 10 }}>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {users.map((u) => {
-              const edit = edits[u.id];
-              const isMe = u.id === profile?.id;
-              return (
-                <tr key={u.id} style={{ borderBottom: '1px solid #eee', opacity: u.is_active ? 1 : 0.55 }}>
-                  <td style={{ padding: 10 }}>
-                    <strong>{u.full_name || '(no name)'}</strong>{isMe && ' (you)'}<br />
-                    <span style={{ color: '#666' }}>{u.email}</span>
-                  </td>
-                  <td style={{ padding: 10 }}>
-                    {isMe ? u.role : (
-                      <>
-                        <select
-                          value={edit?.role ?? u.role}
-                          onChange={(e) => setEdits({ ...edits, [u.id]: { role: e.target.value, client_engagement_id: edit?.client_engagement_id ?? u.client_engagement_id ?? '' } })}
-                          style={{ padding: 6 }}
-                        >
-                          {ALL_ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
-                        </select>
-                        {(edit?.role ?? u.role) === CLIENT_ROLE && (
-                          edit ? (
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Role</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {users.map((u) => {
+                const edit = edits[u.id];
+                const isMe = u.id === profile?.id;
+                return (
+                  <tr key={u.id} style={{ opacity: u.is_active ? 1 : 0.6 }}>
+                    <td>
+                      <strong>{u.full_name || '(no name)'}</strong>{isMe && <span className="muted">{' (you)'}</span>}<br />
+                      <span className="small muted">{u.email}</span>
+                    </td>
+                    <td>
+                      {isMe ? <span className="badge badge-info">{u.role}</span> : (
+                        <>
+                          <div className="row" style={{ gap: 8, flexWrap: 'nowrap' }}>
                             <select
-                              value={edit.client_engagement_id || ''}
-                              onChange={(e) => setEdits({ ...edits, [u.id]: { ...edit, client_engagement_id: e.target.value } })}
-                              style={{ padding: 6, display: 'block', marginTop: 4 }}
+                              value={edit?.role ?? u.role}
+                              onChange={(e) => setEdits({ ...edits, [u.id]: { role: e.target.value, client_engagement_id: edit?.client_engagement_id ?? u.client_engagement_id ?? '' } })}
+                              style={{ width: 'auto', minWidth: 180, minHeight: 32, padding: '5px 10px', fontSize: 13 }}
                             >
-                              <option value="">Choose engagement…</option>
-                              {engagements.map((eng) => <option key={eng.id} value={eng.id}>{eng.client_name} — {eng.engagement_name}</option>)}
+                              {ALL_ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
                             </select>
-                          ) : <div style={{ color: '#666', marginTop: 4 }}>{engagementLabel(u.client_engagement_id) || 'No engagement'}</div>
-                        )}
-                        {edit && <button onClick={() => saveRole(u)} disabled={busy} style={{ marginLeft: 6, padding: '6px 10px', cursor: 'pointer' }}>Save</button>}
-                      </>
-                    )}
-                  </td>
-                  <td style={{ padding: 10 }}>
-                    {u.is_active ? 'Active' : 'Deactivated'}
-                    {u.is_active && u.must_change_password && <div style={{ color: '#a70', fontSize: 13 }}>Still on default password</div>}
-                  </td>
-                  <td style={{ padding: 10, whiteSpace: 'nowrap' }}>
-                    {!isMe && (
-                      <>
-                        <button onClick={() => resetPassword(u)} disabled={busy} style={{ padding: '6px 10px', cursor: 'pointer', marginRight: 6 }}>Reset password</button>
-                        <button onClick={() => toggleActive(u)} disabled={busy} style={{ padding: '6px 10px', cursor: 'pointer' }}>{u.is_active ? 'Deactivate' : 'Reactivate'}</button>
-                      </>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+                            {edit && <button onClick={() => saveRole(u)} disabled={busy} className="btn btn-sm">Save</button>}
+                          </div>
+                          {(edit?.role ?? u.role) === CLIENT_ROLE && (
+                            edit ? (
+                              <select
+                                value={edit.client_engagement_id || ''}
+                                onChange={(e) => setEdits({ ...edits, [u.id]: { ...edit, client_engagement_id: e.target.value } })}
+                                style={{ width: 'auto', minWidth: 180, minHeight: 32, padding: '5px 10px', fontSize: 13, display: 'block', marginTop: 6 }}
+                              >
+                                <option value="">Choose engagement…</option>
+                                {engagements.map((eng) => <option key={eng.id} value={eng.id}>{eng.client_name} — {eng.engagement_name}</option>)}
+                              </select>
+                            ) : <div className="small muted" style={{ marginTop: 6 }}>{engagementLabel(u.client_engagement_id) || 'No engagement'}</div>
+                          )}
+                        </>
+                      )}
+                    </td>
+                    <td>
+                      <div className="row" style={{ gap: 6 }}>
+                        <span className={u.is_active ? 'badge badge-success' : 'badge'}>{u.is_active ? 'Active' : 'Deactivated'}</span>
+                        {u.is_active && u.must_change_password && <span className="badge badge-warning">Still on default password</span>}
+                      </div>
+                    </td>
+                    <td style={{ whiteSpace: 'nowrap' }}>
+                      {!isMe && (
+                        <div className="row" style={{ gap: 8, flexWrap: 'nowrap' }}>
+                          <button onClick={() => resetPassword(u)} disabled={busy} className="btn btn-secondary btn-sm">Reset password</button>
+                          <button onClick={() => toggleActive(u)} disabled={busy} className={u.is_active ? 'btn btn-danger-outline btn-sm' : 'btn btn-secondary btn-sm'}>{u.is_active ? 'Deactivate' : 'Reactivate'}</button>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );

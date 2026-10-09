@@ -45,7 +45,7 @@ export default function EngagementDetail({ params }) {
     load();
   }, [id]);
 
-  if (loading || !profile) return <p style={{ padding: 24, display: 'flex', gap: 8, alignItems: 'center' }}><Spinner /> Loading…</p>;
+  if (loading || !profile) return <p className="loading"><Spinner /> Loading…</p>;
 
   const leadership = isLeadership(profile.role);
   const inactive = engagement.status === 'Inactive';
@@ -93,41 +93,46 @@ export default function EngagementDetail({ params }) {
   ].filter(Boolean);
 
   return (
-    <div style={{ maxWidth: 700, margin: '40px auto', padding: 24 }}>
+    <div className="page">
       <BackLink href="/engagements">Back to Engagements</BackLink>
 
-      <div style={{ background: 'white', padding: 20, borderRadius: 8, marginBottom: 24 }}>
-        <h1 style={{ marginBottom: 4 }}>{engagement.engagement_name}</h1>
-        <p style={{ color: '#666', marginTop: 0 }}>{engagement.client_name}</p>
-        <p style={{ display: 'inline-block', padding: '4px 10px', background: inactive ? '#eee' : '#e8f5ee', color: inactive ? '#666' : '#2a7', borderRadius: 4, fontSize: 14 }}>
-          {engagement.status}
-        </p>
-        {inactive && <p style={{ color: '#666', margin: '4px 0 0' }}>This engagement is read-only: no new uploads or test runs.</p>}
+      <div className="page-header">
+        <div>
+          <h1 className="page-title">{engagement.engagement_name}</h1>
+          <p className="page-subtitle">{engagement.client_name}</p>
+          <p style={{ margin: '12px 0 0' }}>
+            <span className={inactive ? 'badge' : 'badge badge-success'}>{engagement.status}</span>
+          </p>
+          {inactive && <p className="muted" style={{ margin: '8px 0 0' }}>This engagement is read-only: no new uploads or test runs.</p>}
+        </div>
         {leadership && (
-          <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
-            <button onClick={() => setStatus(inactive ? 'Active' : 'Inactive')} disabled={!!busy} style={{ padding: '6px 12px', cursor: 'pointer' }}>
+          <div className="row" style={{ gap: 8 }}>
+            <button onClick={() => setStatus(inactive ? 'Active' : 'Inactive')} disabled={!!busy} className="btn btn-secondary btn-sm">
               <BusyLabel busy={busy === 'status'} busyText="Saving…">{inactive ? 'Reactivate' : 'Mark Inactive'}</BusyLabel>
             </button>
             {entryCount === 0 && (
-              <button onClick={handleDelete} disabled={!!busy} style={{ padding: '6px 12px', cursor: 'pointer', color: 'crimson', border: '1px solid crimson', background: 'white', borderRadius: 4 }}>
+              <button onClick={handleDelete} disabled={!!busy} className="btn btn-danger-outline btn-sm">
                 <BusyLabel busy={busy === 'delete'} busyText="Deleting…">Delete engagement</BusyLabel>
               </button>
             )}
           </div>
         )}
-        {leadership && entryCount > 0 && (
-          <p style={{ color: '#666', fontSize: 13, margin: '8px 0 0' }}>Engagements with uploaded entries are kept as audit evidence, so they can be made Inactive but not deleted.</p>
-        )}
-        {message && <p style={{ color: message.startsWith('Error') ? 'crimson' : '#2a7', margin: '8px 0 0' }}>{message}</p>}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+      {(leadership && entryCount > 0) || message ? (
+        <div className="stack" style={{ gap: 12, marginBottom: 24 }}>
+          {leadership && entryCount > 0 && (
+            <p className="hint" style={{ margin: 0 }}>Engagements with uploaded entries are kept as audit evidence, so they can be made Inactive but not deleted.</p>
+          )}
+          {message && <div className={message.startsWith('Error') ? 'alert alert-danger' : 'alert alert-success'}>{message}</div>}
+        </div>
+      ) : null}
+
+      <div className="grid-2">
         {cards.map((c) => (
-          <Link key={c.href} href={c.href}>
-            <div style={{ background: 'white', padding: 20, borderRadius: 8, cursor: 'pointer', height: '100%', boxSizing: 'border-box' }}>
-              <h3 style={{ marginTop: 0 }}>{c.title}</h3>
-              <p style={{ color: '#666', margin: 0 }}>{c.text}</p>
-            </div>
+          <Link key={c.href} href={c.href} className="link-card">
+            <h3 className="link-card-title">{c.title}</h3>
+            <p className="link-card-text">{c.text}</p>
           </Link>
         ))}
       </div>

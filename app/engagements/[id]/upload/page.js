@@ -499,34 +499,37 @@ export default function UploadJEData({ params }) {
   const foundOptional = Object.keys(OPTIONAL_COLUMNS).filter((f) => mapping[f]);
   const accounts = Object.keys(accountClasses).sort();
   const unclassified = accounts.filter((a) => !accountClasses[a].class).length;
-  const box = { background: 'white', padding: 20, borderRadius: 8, marginBottom: 16 };
-  const aiButton = { padding: '8px 14px', background: '#3b4cca', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer' };
 
   return (
-    <div style={{ maxWidth: 760, margin: '40px auto', padding: 24 }}>
+    <div className="page page-narrow">
       <BackLink href={`/engagements/${engagementId}`}>Back to Engagement</BackLink>
-      <h1>Upload JE Data</h1>
+      <div className="page-header">
+        <div>
+          <h1 className="page-title">Upload JE Data</h1>
+          <p className="page-subtitle">
+            Upload the client&apos;s CSV or Excel file as it is. ODYSSEY needs a <strong>Date, Account, Description, Debit and Credit</strong> column.
+            If the client names them differently, you&apos;ll match them once and ODYSSEY remembers it for this client.
+          </p>
+          <p className="muted small" style={{ margin: '8px 0 0' }}>
+            Optional columns used by the testing rules: <strong>Effective Date, Prepared By, JE No., Source, Account Type</strong>.
+          </p>
+        </div>
+      </div>
       {inactive && (
-        <p style={{ background: '#f3f3f3', padding: 12, borderRadius: 6 }}>
+        <p className="alert alert-warning" style={{ marginBottom: 24 }}>
           This engagement is <strong>Inactive</strong>, so new entries can&apos;t be uploaded. Firm Leadership can reactivate it.
         </p>
       )}
-      <p style={{ color: '#666' }}>
-        Upload the client&apos;s CSV or Excel file as it is. ODYSSEY needs a <strong>Date, Account, Description, Debit and Credit</strong> column.
-        If the client names them differently, you&apos;ll match them once and ODYSSEY remembers it for this client.
-      </p>
-      <p style={{ color: '#666', fontSize: 14 }}>
-        Optional columns used by the testing rules: <strong>Effective Date, Prepared By, JE No., Source, Account Type</strong>.
-      </p>
 
-      <div style={box}>
+      <div className="stack-lg">
+      <div className="card card-accent">
         <input type="file" accept=".csv,.xlsx,.xls" onChange={handleFileChange} disabled={inactive} />
-        {fileName && <p style={{ color: '#666', marginTop: 8 }}>Selected: {fileName}</p>}
+        {fileName && <p className="text-2 small" style={{ margin: '10px 0 0' }}>Selected: {fileName}</p>}
         {sheets.length > 1 && (
-          <p style={{ marginBottom: 0 }}>
+          <p style={{ margin: '16px 0 0' }}>
             <label>
               This workbook has {sheets.length} sheets. Sheet with the journal entries:{' '}
-              <select value={sheetName} onChange={(e) => readSheet(e.target.value)} disabled={status === 'saving'}>
+              <select value={sheetName} onChange={(e) => readSheet(e.target.value)} disabled={status === 'saving'} style={{ marginTop: 6 }}>
                 {sheets.map((sh) => <option key={sh.name} value={sh.name}>{sh.name} (about {sh.rows.toLocaleString()} rows)</option>)}
               </select>
             </label>
@@ -534,16 +537,16 @@ export default function UploadJEData({ params }) {
         )}
       </div>
 
-      {status === 'validating' && <p style={{ display: 'flex', gap: 8, alignItems: 'center' }}><Spinner /> Reading and checking the file…</p>}
+      {status === 'validating' && <p className="text-2" style={{ display: 'flex', gap: 8, alignItems: 'center', margin: 0 }}><Spinner /> Reading and checking the file…</p>}
 
       {validationErrors.length > 0 && (
-        <div style={{ background: '#fdeaea', border: '1px solid #e88', padding: 16, borderRadius: 8, marginBottom: 16 }}>
-          <strong style={{ color: 'crimson' }}>Validation failed — nothing was saved:</strong>
-          <ul style={{ marginTop: 8, marginBottom: 0 }}>
-            {validationErrors.map((err, i) => <li key={i} style={{ color: '#a33', fontSize: 14 }}>{err}</li>)}
+        <div className="alert alert-danger">
+          <strong>Validation failed — nothing was saved:</strong>
+          <ul style={{ margin: '8px 0 0', paddingLeft: 20 }}>
+            {validationErrors.map((err, i) => <li key={i} style={{ fontSize: 14 }}>{err}</li>)}
           </ul>
           {rawHeaders.length > 0 && (
-            <button onClick={() => { setValidationErrors([]); setStatus('mapping'); }} style={{ marginTop: 12, padding: '6px 12px', cursor: 'pointer' }}>
+            <button onClick={() => { setValidationErrors([]); setStatus('mapping'); }} className="btn btn-secondary btn-sm" style={{ marginTop: 12 }}>
               Change column matching
             </button>
           )}
@@ -551,129 +554,135 @@ export default function UploadJEData({ params }) {
       )}
 
       {status === 'mapping' && (
-        <div style={box}>
-          <h3 style={{ marginTop: 0 }}>Match the columns</h3>
-          <p style={{ color: '#666', marginTop: 0 }}>
+        <div className="card">
+          <h3 className="card-title">Match the columns</h3>
+          <p className="card-subtitle">
             Pick which of the client&apos;s columns holds each field. * = required.
           </p>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
-            <thead>
-              <tr style={{ textAlign: 'left', color: '#666' }}>
-                <th style={{ padding: '6px 4px', fontWeight: 500 }}>ODYSSEY field</th>
-                <th style={{ padding: '6px 4px', fontWeight: 500 }}>Client&apos;s column</th>
-              </tr>
-            </thead>
-            <tbody>
-              {ALL_FIELDS.map((field) => (
-                <tr key={field} style={{ borderTop: '1px solid #eee' }}>
-                  <td style={{ padding: '6px 4px' }}>{FIELD_LABELS[field]}</td>
-                  <td style={{ padding: '6px 4px' }}>
-                    <select
-                      value={mapping[field] || ''}
-                      onChange={(e) => setMapping({ ...mapping, [field]: e.target.value })}
-                      style={{ padding: 6, width: '100%' }}
-                    >
-                      <option value="">(none)</option>
-                      {rawHeaders.map((h) => <option key={h} value={h}>{h}</option>)}
-                    </select>
-                  </td>
+          <div className="table-wrap">
+            <table className="compact">
+              <thead>
+                <tr>
+                  <th>ODYSSEY field</th>
+                  <th>Client&apos;s column</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-          <div style={{ display: 'flex', gap: 8, marginTop: 12, alignItems: 'center' }}>
-            <button onClick={suggestMappingWithAI} disabled={aiBusy} style={aiButton}>
+              </thead>
+              <tbody>
+                {ALL_FIELDS.map((field) => (
+                  <tr key={field}>
+                    <td style={{ verticalAlign: 'middle' }}>{FIELD_LABELS[field]}</td>
+                    <td>
+                      <select
+                        value={mapping[field] || ''}
+                        onChange={(e) => setMapping({ ...mapping, [field]: e.target.value })}
+                      >
+                        <option value="">(none)</option>
+                        {rawHeaders.map((h) => <option key={h} value={h}>{h}</option>)}
+                      </select>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="form-actions" style={{ marginTop: 16 }}>
+            <button onClick={suggestMappingWithAI} disabled={aiBusy} className="btn btn-ai">
               <BusyLabel busy={aiBusy} busyText="Claude is matching…">Ask Claude to match them</BusyLabel>
             </button>
-            <button onClick={confirmMapping} disabled={aiBusy} style={{ padding: '8px 14px', background: '#111', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer' }}>
+            <button onClick={confirmMapping} disabled={aiBusy} className="btn">
               Use these columns
             </button>
           </div>
-          {mappingByAI && <p style={{ fontSize: 13, color: '#666', marginBottom: 0 }}><ClaudeTag />Claude only suggests. You confirm by clicking Use these columns.</p>}
-          {aiMessage && <p style={{ color: '#a70', marginBottom: 0 }}>{aiMessage}</p>}
+          {mappingByAI && <p className="muted small" style={{ margin: '12px 0 0' }}><ClaudeTag />Claude only suggests. You confirm by clicking Use these columns.</p>}
+          {aiMessage && <p className="alert alert-warning" style={{ margin: '12px 0 0' }}>{aiMessage}</p>}
         </div>
       )}
 
       {status === 'ready' && (
         <>
-          <div style={{ background: '#eaf6ea', border: '1px solid #8c8', padding: 16, borderRadius: 8, marginBottom: 16 }}>
-            {saveMessage && <p style={{ color: '#a70', margin: '0 0 8px' }}>{saveMessage}</p>}
+          <div className="alert alert-success" style={{ color: 'var(--text)' }}>
+            {saveMessage && <p className="text-warning" style={{ margin: '0 0 8px' }}>{saveMessage}</p>}
             <p style={{ margin: 0, marginBottom: 8 }}>
               <strong>{parsedRows.length} rows</strong> passed validation, and every journal entry balances.
             </p>
-            <p style={{ margin: 0, fontSize: 14, color: '#555' }}>
+            <p className="text-2" style={{ margin: 0, fontSize: 14 }}>
               Optional columns found: {foundOptional.length > 0 ? foundOptional.map((f) => FIELD_LABELS[f]).join(', ') : 'none'}
               {' · '}
-              <button onClick={() => setStatus('mapping')} style={{ background: 'none', border: 'none', color: '#3b4cca', cursor: 'pointer', padding: 0 }}>
+              <button onClick={() => setStatus('mapping')} style={{ background: 'none', border: 'none', color: 'var(--link)', cursor: 'pointer', padding: 0, fontSize: 'inherit' }}>
                 change column matching
               </button>
             </p>
           </div>
 
-          <div style={box}>
-            <h3 style={{ marginTop: 0 }}>Account types</h3>
-            <p style={{ color: '#666', marginTop: 0, fontSize: 14 }}>
+          <div className="card">
+            <h3 className="card-title">Account types</h3>
+            <p className="card-subtitle">
               Rules 5 and 6 need to know what kind of account each one is. Check the list, change anything that&apos;s wrong, then save.
-              {unclassified > 0 && <strong style={{ color: '#a70' }}> {unclassified} account(s) still have no type.</strong>}
+              {unclassified > 0 && <strong className="text-warning"> {unclassified} account(s) still have no type.</strong>}
             </p>
-            <button onClick={sortAccountsWithAI} disabled={aiBusy} style={{ ...aiButton, marginBottom: 12 }}>
+            <button onClick={sortAccountsWithAI} disabled={aiBusy} className="btn btn-ai" style={{ marginBottom: 16 }}>
               <BusyLabel busy={aiBusy} busyText="Claude is sorting…">Ask Claude to sort the accounts</BusyLabel>
             </button>
-            {aiMessage && <p style={{ color: '#a70', marginTop: 0 }}>{aiMessage}</p>}
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
-              <thead>
-                <tr style={{ textAlign: 'left', color: '#666' }}>
-                  <th style={{ padding: '6px 4px', fontWeight: 500 }}>Account title</th>
-                  <th style={{ padding: '6px 4px', fontWeight: 500 }}>Account type</th>
-                  <th style={{ padding: '6px 4px', fontWeight: 500 }}>Sorted by</th>
-                </tr>
-              </thead>
-              <tbody>
-                {accounts.map((account) => {
-                  const v = accountClasses[account];
-                  return (
-                    <tr key={account} style={{ borderTop: '1px solid #eee' }}>
-                      <td style={{ padding: '6px 4px' }}>{account}</td>
-                      <td style={{ padding: '6px 4px' }}>
-                        <select
-                          value={v.class}
-                          onChange={(e) => setAccountClasses({ ...accountClasses, [account]: { class: e.target.value, source: 'Person' } })}
-                          style={{ padding: 4 }}
-                        >
-                          <option value="">(choose)</option>
-                          {CLASS_OPTIONS.map((c) => <option key={c} value={c}>{c}</option>)}
-                        </select>
-                      </td>
-                      <td style={{ padding: '6px 4px', color: '#666', fontSize: 12 }}>
-                        {v.source === 'AI' ? <ClaudeTag text="Claude suggestion" /> : SOURCE_LABELS[v.source]}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+            {aiMessage && <p className="alert alert-warning" style={{ margin: '0 0 16px' }}>{aiMessage}</p>}
+            <div className="table-wrap">
+              <table className="compact">
+                <thead>
+                  <tr>
+                    <th>Account title</th>
+                    <th>Account type</th>
+                    <th>Sorted by</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {accounts.map((account) => {
+                    const v = accountClasses[account];
+                    return (
+                      <tr key={account}>
+                        <td style={{ verticalAlign: 'middle' }}>{account}</td>
+                        <td>
+                          <select
+                            value={v.class}
+                            onChange={(e) => setAccountClasses({ ...accountClasses, [account]: { class: e.target.value, source: 'Person' } })}
+                            style={{ minWidth: 160 }}
+                          >
+                            <option value="">(choose)</option>
+                            {CLASS_OPTIONS.map((c) => <option key={c} value={c}>{c}</option>)}
+                          </select>
+                        </td>
+                        <td className="muted" style={{ fontSize: 12, verticalAlign: 'middle' }}>
+                          {v.source === 'AI' ? <ClaudeTag text="Claude suggestion" /> : SOURCE_LABELS[v.source]}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
 
-          <button
-            onClick={handleConfirmSave}
-            disabled={aiBusy || inactive}
-            style={{ padding: '10px 20px', background: '#111', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer', marginBottom: 16 }}
-          >
-            Confirm &amp; Save to Engagement
-          </button>
+          <div className="form-actions" style={{ marginTop: 0 }}>
+            <button
+              onClick={handleConfirmSave}
+              disabled={aiBusy || inactive}
+              className="btn"
+            >
+              Confirm &amp; Save to Engagement
+            </button>
+          </div>
         </>
       )}
 
-      {status === 'saving' && <p style={{ display: 'flex', gap: 8, alignItems: 'center' }}><Spinner /> Saving {parsedRows.length.toLocaleString()} lines…</p>}
+      {status === 'saving' && <p className="text-2" style={{ display: 'flex', gap: 8, alignItems: 'center', margin: 0 }}><Spinner /> Saving {parsedRows.length.toLocaleString()} lines…</p>}
 
       {status === 'done' && (
-        <div style={{ background: '#eaf6ea', border: '1px solid #8c8', padding: 16, borderRadius: 8 }}>
+        <div className="alert alert-success">
           <p style={{ margin: 0 }}>{saveMessage}</p>
           <Link href={`/engagements/${engagementId}`} style={{ display: 'inline-block', marginTop: 12 }}>
             &larr; Back to Engagement
           </Link>
         </div>
       )}
+      </div>
     </div>
   );
 }

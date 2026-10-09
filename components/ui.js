@@ -3,7 +3,7 @@
 // Small pieces used on many pages: a spinner for buttons that wait on the
 // server or the AI, a password box with a Show button, the password
 // strength bar, a back link, and the Claude label for AI buttons.
-// Colours use the brand CSS variables when they exist, with plain fallbacks.
+// Colours and shapes come from app/globals.css (var(--...) and class names).
 
 import { useState } from 'react';
 import Link from 'next/link';
@@ -35,8 +35,8 @@ export function BusyLabel({ busy, children, busyText }) {
 
 export function BackLink({ href, children }) {
   return (
-    <Link href={href} style={{ display: 'inline-block', marginBottom: 16 }}>
-      &larr; {children}
+    <Link href={href} className="back-link">
+      <span aria-hidden="true">&larr;</span> {children}
     </Link>
   );
 }
@@ -46,9 +46,10 @@ export function ClaudeTag({ text = 'Claude' }) {
   return (
     <span
       title="This feature uses Claude, an AI model by Anthropic. A person always checks and confirms the result."
-      style={{ background: 'var(--accent-soft, #eef2ff)', color: 'var(--accent, #3b4cca)', padding: '1px 6px', borderRadius: 4, fontSize: 12, marginRight: 6, whiteSpace: 'nowrap' }}
+      className="badge badge-gold"
+      style={{ marginRight: 6 }}
     >
-      {text}
+      <span aria-hidden="true">&#10022;</span> {text}
     </span>
   );
 }
@@ -56,7 +57,7 @@ export function ClaudeTag({ text = 'Claude' }) {
 export function PasswordInput({ value, onChange, placeholder, autoComplete = 'current-password', required = true, id }) {
   const [show, setShow] = useState(false);
   return (
-    <div style={{ display: 'flex', gap: 6 }}>
+    <div style={{ display: 'flex', gap: 8 }}>
       <input
         id={id}
         type={show ? 'text' : 'password'}
@@ -65,14 +66,15 @@ export function PasswordInput({ value, onChange, placeholder, autoComplete = 'cu
         placeholder={placeholder}
         autoComplete={autoComplete}
         required={required}
-        style={{ flex: 1, padding: 8, minWidth: 0 }}
+        style={{ flex: 1, minWidth: 0 }}
       />
       <button
         type="button"
         onClick={() => setShow(!show)}
         aria-pressed={show}
         aria-label={show ? 'Hide password' : 'Show password'}
-        style={{ padding: '0 12px', cursor: 'pointer', whiteSpace: 'nowrap' }}
+        className="btn btn-secondary"
+        style={{ minWidth: 68 }}
       >
         {show ? 'Hide' : 'Show'}
       </button>
@@ -87,7 +89,7 @@ export function PasswordChecklist({ password }) {
     <div style={{ marginTop: 6 }}>
       <div style={{ display: 'flex', gap: 4 }}>
         {[0, 1, 2, 3, 4].map((i) => (
-          <span key={i} style={{ flex: 1, height: 6, borderRadius: 3, background: password && i <= strength.score ? strength.color : 'var(--border, #e5e5e5)' }} />
+          <span key={i} style={{ flex: 1, height: 6, borderRadius: 3, background: password && i <= strength.score ? strength.color : 'var(--border)' }} />
         ))}
       </div>
       <p style={{ fontSize: 13, margin: '4px 0', color: strength.color, minHeight: 18 }}>
@@ -97,7 +99,7 @@ export function PasswordChecklist({ password }) {
         {PASSWORD_RULES.map((r) => {
           const ok = r.test(password || '');
           return (
-            <li key={r.key} style={{ color: ok ? '#1e8449' : 'var(--text-2, #666)' }}>
+            <li key={r.key} style={{ color: ok ? 'var(--success)' : 'var(--text-2)' }}>
               {ok ? '✓' : '○'} {r.label}
             </li>
           );

@@ -84,51 +84,60 @@ export default function MyAccount() {
 
   if (!profile) return null;
 
-  const row = { display: 'flex', padding: '8px 0', borderBottom: '1px solid #eee' };
-  const label = { width: 140, color: '#666' };
-
   return (
-    <div style={{ maxWidth: 600, margin: '40px auto', padding: 24 }}>
+    <div className="page page-narrow">
       <BackLink href={homeFor(profile.role)}>Back to {homeLabel(profile.role)}</BackLink>
-      <h1>My Account</h1>
-
-      <div style={{ background: 'white', padding: 20, borderRadius: 8, marginBottom: 16, display: 'flex', gap: 16, alignItems: 'center' }}>
-        <Avatar profile={profile} size={72} />
+      <div className="page-header">
         <div>
-          <strong>Profile picture</strong>
-          <p style={{ color: '#666', margin: '4px 0 8px', fontSize: 14 }}>PNG, JPG or WebP, up to 2 MB. It shows in the sidebar.</p>
-          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 12px', border: '1px solid #ccc', borderRadius: 4, cursor: uploading ? 'wait' : 'pointer' }}>
-            {uploading ? <><Spinner /> Uploading…</> : (profile.avatar_url ? 'Change picture' : 'Upload picture')}
-            <input type="file" accept="image/png,image/jpeg,image/webp" onChange={handlePicture} disabled={uploading} style={{ display: 'none' }} />
-          </label>
-          {profile.avatar_url && !uploading && (
-            <button type="button" onClick={removePicture} style={{ marginLeft: 8, padding: '6px 12px', cursor: 'pointer' }}>Remove</button>
-          )}
-          {pictureMessage && <p style={{ color: pictureMessage.startsWith('Error') ? 'crimson' : '#2a7', margin: '8px 0 0' }}>{pictureMessage}</p>}
+          <h1 className="page-title">My Account</h1>
         </div>
       </div>
 
-      <div style={{ background: 'white', padding: 20, borderRadius: 8, marginBottom: 16 }}>
-        <div style={row}><span style={label}>Email</span><span>{profile.email}</span></div>
-        <div style={row}><span style={label}>Role</span><span>{profile.role}</span></div>
-        <div style={row}><span style={label}>Team</span><span>{teamOf(profile.role)}</span></div>
-        {engagementName && <div style={row}><span style={label}>Engagement</span><span>{engagementName}</span></div>}
-        <p style={{ color: '#666', fontSize: 13, marginBottom: 0 }}>Your email and role can only be changed by the System Administrator.</p>
-      </div>
-
-      <form onSubmit={handleSave} style={{ background: 'white', padding: 20, borderRadius: 8, marginBottom: 16 }}>
-        <label style={{ display: 'block', fontWeight: 'bold', marginBottom: 4 }}>Full name</label>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <input value={fullName} onChange={(e) => { setFullName(e.target.value); setMessage(''); }} required style={{ flex: 1, padding: 8 }} />
-          <button type="submit" style={{ padding: '8px 16px', background: '#111', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer' }}>Save</button>
+      <div className="stack">
+        <div className="card" style={{ display: 'flex', gap: 20, alignItems: 'center', flexWrap: 'wrap' }}>
+          <Avatar profile={profile} size={72} />
+          <div style={{ flex: 1, minWidth: 220 }}>
+            <h2 className="card-title">Profile picture</h2>
+            <p className="card-subtitle" style={{ marginBottom: 12 }}>PNG, JPG or WebP, up to 2 MB. It shows in the sidebar.</p>
+            <div className="row" style={{ gap: 8 }}>
+              <label className="btn btn-secondary btn-sm" style={{ marginBottom: 0, cursor: uploading ? 'wait' : 'pointer' }}>
+                {uploading ? <><Spinner /> Uploading…</> : (profile.avatar_url ? 'Change picture' : 'Upload picture')}
+                <input type="file" accept="image/png,image/jpeg,image/webp" onChange={handlePicture} disabled={uploading} style={{ display: 'none' }} />
+              </label>
+              {profile.avatar_url && !uploading && (
+                <button type="button" onClick={removePicture} className="btn btn-ghost btn-sm">Remove</button>
+              )}
+            </div>
+            {pictureMessage && <div className={`alert ${pictureMessage.startsWith('Error') ? 'alert-danger' : 'alert-success'}`} style={{ marginTop: 12 }}>{pictureMessage}</div>}
+          </div>
         </div>
-        {message && <p style={{ color: message.startsWith('Error') ? 'crimson' : '#2a7', marginBottom: 0 }}>{message}</p>}
-      </form>
 
-      <div style={{ background: 'white', padding: 20, borderRadius: 8 }}>
-        <strong>Password</strong>
-        <p style={{ color: '#666', margin: '4px 0 12px' }}>Change the password you use to sign in.</p>
-        <Link href="/change-password">Change password &rarr;</Link>
+        <div className="card">
+          <dl style={{ margin: '-10px 0 0' }}>
+            <div style={{ display: 'flex', gap: 16, padding: '10px 0', borderBottom: '1px solid var(--border)' }}><dt className="text-2" style={{ width: 140, flexShrink: 0 }}>Email</dt><dd style={{ margin: 0 }}>{profile.email}</dd></div>
+            <div style={{ display: 'flex', gap: 16, padding: '10px 0', borderBottom: '1px solid var(--border)' }}><dt className="text-2" style={{ width: 140, flexShrink: 0 }}>Role</dt><dd style={{ margin: 0 }}>{profile.role}</dd></div>
+            <div style={{ display: 'flex', gap: 16, padding: '10px 0', borderBottom: '1px solid var(--border)' }}><dt className="text-2" style={{ width: 140, flexShrink: 0 }}>Team</dt><dd style={{ margin: 0 }}>{teamOf(profile.role)}</dd></div>
+            {engagementName && <div style={{ display: 'flex', gap: 16, padding: '10px 0', borderBottom: '1px solid var(--border)' }}><dt className="text-2" style={{ width: 140, flexShrink: 0 }}>Engagement</dt><dd style={{ margin: 0 }}>{engagementName}</dd></div>}
+          </dl>
+          <p className="hint" style={{ marginTop: 16, marginBottom: 0 }}>Your email and role can only be changed by the System Administrator.</p>
+        </div>
+
+        <form onSubmit={handleSave} className="card">
+          <label htmlFor="account-full-name">Full name</label>
+          <div className="row" style={{ flexWrap: 'nowrap', gap: 8 }}>
+            <input id="account-full-name" value={fullName} onChange={(e) => { setFullName(e.target.value); setMessage(''); }} required style={{ flex: 1 }} />
+            <button type="submit" className="btn">Save</button>
+          </div>
+          {message && <div className={`alert ${message.startsWith('Error') ? 'alert-danger' : 'alert-success'}`} style={{ marginTop: 12 }}>{message}</div>}
+        </form>
+
+        <div className="card row-between">
+          <div>
+            <h2 className="card-title">Password</h2>
+            <p className="card-subtitle" style={{ margin: 0 }}>Change the password you use to sign in.</p>
+          </div>
+          <Link href="/change-password" className="btn btn-secondary">Change password &rarr;</Link>
+        </div>
       </div>
     </div>
   );

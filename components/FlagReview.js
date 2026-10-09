@@ -16,7 +16,7 @@ const DECISIONS = {
   Error: 'Error (needs adjusting)',
   Escalate: 'Escalate (possible fraud)',
 };
-const RISK_COLORS = { High: 'crimson', Medium: '#c60', Low: '#2a7' };
+const RISK_COLORS = { High: 'var(--danger)', Medium: 'var(--warning)', Low: 'var(--success)' };
 
 const toCents = (n) => Math.round((Number(n) || 0) * 100);
 const peso = (n) => `₱${Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -115,112 +115,111 @@ export default function FlagReview({ engagementId, entry, jeLines, accounts, not
     onAdjustmentSaved(data);
   }
 
-  const small = { padding: '6px 12px', cursor: 'pointer' };
-  const aiButton = { ...small, background: '#3b4cca', color: 'white', border: 'none', borderRadius: 4 };
-
   return (
-    <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px dashed #ddd', fontSize: 14 }}>
+    <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--border)', fontSize: 14 }}>
       {note && (
-        <p style={{ margin: '0 0 8px' }}>
+        <p style={{ margin: '0 0 12px' }}>
           <ClaudeTag />
           <strong style={{ color: RISK_COLORS[note.risk] }}>{note.risk} risk.</strong> {note.explanation}
         </p>
       )}
 
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-        <label htmlFor={`decision-${entry.id}`} style={{ fontWeight: 600 }}>Decision</label>
-        <select id={`decision-${entry.id}`} value={decision} onChange={(e) => { setDecision(e.target.value); setMessage(''); }} style={{ padding: 6 }}>
+      <div className="row">
+        <label htmlFor={`decision-${entry.id}`} style={{ margin: 0 }}>Decision</label>
+        <select id={`decision-${entry.id}`} value={decision} onChange={(e) => { setDecision(e.target.value); setMessage(''); }} style={{ width: 'auto', minWidth: 220 }}>
           <option value="">Your decision...</option>
           {Object.entries(DECISIONS).map(([v, label]) => <option key={v} value={v}>{label}</option>)}
         </select>
         {note && (
-          <button onClick={() => { setComment(note.draft_comment); setAiDrafted(true); }} style={small}>
+          <button onClick={() => { setComment(note.draft_comment); setAiDrafted(true); }} className="btn btn-ai btn-sm">
             Use Claude&apos;s draft comment
           </button>
         )}
-        {review && <span style={{ color: '#2a7' }}>Saved: {DECISIONS[review.disposition]}</span>}
+        {review && <span className="badge badge-success">Saved: {DECISIONS[review.disposition]}</span>}
       </div>
-      <label htmlFor={`comment-${entry.id}`} style={{ display: 'block', fontWeight: 600, marginTop: 8 }}>Comment</label>
+      <label htmlFor={`comment-${entry.id}`} style={{ marginTop: 12 }}>Comment</label>
       <textarea
         id={`comment-${entry.id}`}
         value={comment}
         onChange={(e) => { setComment(e.target.value); setMessage(''); }}
         rows={2}
         placeholder="What you checked and what you found (needed to save)"
-        style={{ width: '100%', boxSizing: 'border-box', marginTop: 4, padding: 8, fontFamily: 'inherit' }}
+        style={{ minHeight: 72 }}
       />
-      {aiDrafted && <p style={{ margin: '2px 0 0', fontSize: 12, color: '#666' }}><ClaudeTag text="Claude draft" />Edit it so it says what you found.</p>}
-      <button onClick={saveReview} disabled={!!busy} style={{ ...small, marginTop: 8, background: '#111', color: 'white', border: 'none', borderRadius: 4 }}>
+      {aiDrafted && <p className="muted" style={{ margin: '6px 0 0', fontSize: 12 }}><ClaudeTag text="Claude draft" />Edit it so it says what you found.</p>}
+      <button onClick={saveReview} disabled={!!busy} className="btn btn-sm" style={{ marginTop: 12 }}>
         <BusyLabel busy={busy === 'save'} busyText="Saving…">Save decision</BusyLabel>
       </button>
 
       {review?.disposition === 'Error' && (
-        <div style={{ marginTop: 12, background: '#fafafa', padding: 12, borderRadius: 6 }}>
+        <div style={{ marginTop: 16, background: 'var(--surface-2)', padding: 16, borderRadius: 'var(--radius-sm)' }}>
           <strong>Proposed adjusting entry</strong>
           {adjustment ? (
-            <div style={{ marginTop: 6 }}>
-              <p style={{ margin: '0 0 4px' }}>{adjustment.description} · <strong>{adjustment.status}</strong>
+            <div style={{ marginTop: 8 }}>
+              <p style={{ margin: '0 0 6px' }}>{adjustment.description} · <strong>{adjustment.status}</strong>
                 {adjustment.client_comment ? ` · client: "${adjustment.client_comment}"` : ''}</p>
               {adjustment.lines.map((l, i) => (
-                <div key={i} style={{ color: '#555' }}>
+                <div key={i} className="text-2" style={{ fontFamily: 'var(--font-mono)', fontSize: 13, whiteSpace: 'pre-wrap' }}>
                   {l.debit > 0 ? `Dr ${l.account} ${peso(l.debit)}` : `    Cr ${l.account} ${peso(l.credit)}`}
                 </div>
               ))}
             </div>
           ) : !adjOpen ? (
-            <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
-              <button onClick={draftAdjustmentWithAI} disabled={!!busy} style={aiButton}>
+            <div className="row" style={{ marginTop: 10 }}>
+              <button onClick={draftAdjustmentWithAI} disabled={!!busy} className="btn btn-ai btn-sm">
                 <BusyLabel busy={busy === 'ai'} busyText="Claude is drafting…">Draft it with Claude</BusyLabel>
               </button>
-              <button onClick={writeAdjustmentMyself} disabled={!!busy} style={small}>Write it myself</button>
+              <button onClick={writeAdjustmentMyself} disabled={!!busy} className="btn btn-secondary btn-sm">Write it myself</button>
             </div>
           ) : (
-            <div style={{ marginTop: 6 }}>
-              {adjByAI && <p style={{ margin: '0 0 6px', fontSize: 12, color: '#666' }}><ClaudeTag text="Claude draft" />Check every line before proposing it.</p>}
-              <label htmlFor={`adj-desc-${entry.id}`} style={{ display: 'block', fontWeight: 600, marginBottom: 4 }}>Description</label>
+            <div style={{ marginTop: 10 }}>
+              {adjByAI && <p className="muted" style={{ margin: '0 0 10px', fontSize: 12 }}><ClaudeTag text="Claude draft" />Check every line before proposing it.</p>}
+              <label htmlFor={`adj-desc-${entry.id}`}>Description</label>
               <input
                 id={`adj-desc-${entry.id}`}
                 value={adjDescription}
                 onChange={(e) => setAdjDescription(e.target.value)}
-                style={{ width: '100%', boxSizing: 'border-box', padding: 6, marginBottom: 6 }}
+                style={{ marginBottom: 12 }}
               />
               <datalist id={`accounts-${entry.id}`}>
                 {accounts.map((a) => <option key={a} value={a} />)}
               </datalist>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <div className="table-wrap">
+              <table className="compact">
                 <thead>
-                  <tr style={{ color: '#666', textAlign: 'left' }}><th>Account title</th><th>Debit</th><th>Credit</th><th><span style={{ position: 'absolute', left: -9999 }}>Remove</span></th></tr>
+                  <tr><th>Account title</th><th className="num">Debit</th><th className="num">Credit</th><th><span style={{ position: 'absolute', left: -9999 }}>Remove</span></th></tr>
                 </thead>
                 <tbody>
                   {adjLines.map((l, i) => (
                     <tr key={i}>
-                      <td><input list={`accounts-${entry.id}`} value={l.account} onChange={(e) => setLine(i, 'account', e.target.value)} style={{ width: '100%', padding: 4, boxSizing: 'border-box' }} /></td>
-                      <td><input type="number" min="0" step="0.01" value={l.debit} onChange={(e) => setLine(i, 'debit', e.target.value)} style={{ width: 110, padding: 4 }} /></td>
-                      <td><input type="number" min="0" step="0.01" value={l.credit} onChange={(e) => setLine(i, 'credit', e.target.value)} style={{ width: 110, padding: 4 }} /></td>
-                      <td><button onClick={() => setAdjLines(adjLines.filter((_, j) => j !== i))} style={{ cursor: 'pointer' }}>✕</button></td>
+                      <td><input list={`accounts-${entry.id}`} value={l.account} onChange={(e) => setLine(i, 'account', e.target.value)} /></td>
+                      <td><input type="number" min="0" step="0.01" value={l.debit} onChange={(e) => setLine(i, 'debit', e.target.value)} style={{ width: 130 }} /></td>
+                      <td><input type="number" min="0" step="0.01" value={l.credit} onChange={(e) => setLine(i, 'credit', e.target.value)} style={{ width: 130 }} /></td>
+                      <td><button onClick={() => setAdjLines(adjLines.filter((_, j) => j !== i))} className="btn btn-ghost btn-sm">✕</button></td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 6, flexWrap: 'wrap' }}>
-                <button onClick={() => setAdjLines([...adjLines, { account: '', debit: 0, credit: 0 }])} style={small}>Add line</button>
-                <span style={{ color: balanced ? '#2a7' : 'crimson' }}>
+              </div>
+              <div className="row" style={{ marginTop: 10 }}>
+                <button onClick={() => setAdjLines([...adjLines, { account: '', debit: 0, credit: 0 }])} className="btn btn-secondary btn-sm">Add line</button>
+                <span className={`small ${balanced ? 'text-success' : 'text-danger'}`}>
                   Debits {peso(totalDebit / 100)} · Credits {peso(totalCredit / 100)}
                   {balanced ? ' · balanced' : ' · each line needs an account and a debit OR a credit, and totals must match'}
                 </span>
               </div>
-              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                <button onClick={proposeAdjustment} disabled={!!busy || !balanced || !adjDescription.trim()} style={{ ...small, background: '#111', color: 'white', border: 'none', borderRadius: 4 }}>
+              <div className="row" style={{ marginTop: 12 }}>
+                <button onClick={proposeAdjustment} disabled={!!busy || !balanced || !adjDescription.trim()} className="btn btn-sm">
                   <BusyLabel busy={busy === 'propose'} busyText="Proposing…">Propose to client</BusyLabel>
                 </button>
-                <button onClick={() => setAdjOpen(false)} style={small}>Cancel</button>
+                <button onClick={() => setAdjOpen(false)} className="btn btn-secondary btn-sm">Cancel</button>
               </div>
             </div>
           )}
         </div>
       )}
 
-      {message && <p style={{ margin: '6px 0 0', color: message.startsWith('Error') ? 'crimson' : message.includes('saved') || message.includes('proposed') ? '#2a7' : '#a70' }}>{message}</p>}
+      {message && <p className={`alert ${message.startsWith('Error') ? 'alert-danger' : message.includes('saved') || message.includes('proposed') ? 'alert-success' : 'alert-warning'}`} style={{ margin: '12px 0 0' }}>{message}</p>}
     </div>
   );
 }

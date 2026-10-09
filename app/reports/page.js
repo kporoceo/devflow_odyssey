@@ -5,8 +5,18 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '../../lib/supabaseClient';
 import { useProfile } from '../../components/AppShell';
-import { canPrepareReports, isClient, SIGNOFF_LEVELS, STATUS_COLORS } from '../../lib/roles';
+import { canPrepareReports, isClient, SIGNOFF_LEVELS } from '../../lib/roles';
 import { BackLink, Spinner } from '../../components/ui';
+
+// Report status colours, from app/globals.css.
+const STATUS_BADGE = {
+  'Draft': 'badge',
+  'Returned': 'badge badge-danger',
+  'For Review': 'badge badge-warning',
+  'For Partner Approval': 'badge badge-warning',
+  'For Client Approval': 'badge badge-warning',
+  'Signed Off': 'badge badge-success',
+};
 
 // Firm staff: every report, plus a form to start one.
 // Client: only its own engagement's reports that reached the client level.
@@ -67,57 +77,61 @@ export default function Reports() {
     router.push(`/reports/${data.id}`);
   }
 
-  if (!profile || loading) return <p style={{ padding: 24, display: 'flex', gap: 8, alignItems: 'center' }}><Spinner /> Loading…</p>;
+  if (!profile || loading) return <p className="loading"><Spinner /> Loading…</p>;
 
   const myStatuses = SIGNOFF_LEVELS.filter((s) => s.canAct(profile.role)).map((s) => s.status);
   const shown = onlyWaiting ? reports.filter((r) => myStatuses.includes(r.status)) : reports;
 
   return (
-    <div style={{ maxWidth: 800, margin: '40px auto', padding: 24 }}>
+    <div className="page page-narrow">
       {!isClient(profile.role) && (fromEngagement
         ? <BackLink href={`/engagements/${fromEngagement}`}>Back to Engagement</BackLink>
         : <BackLink href="/dashboard">Back to Dashboard</BackLink>)}
-      <h1>{isClient(profile.role) ? 'My Reports' : 'Reports'}</h1>
-      {isClient(profile.role) && (
-        <p style={{ color: '#666' }}>Reports from your auditors appear here once they are ready for your review and sign-off.</p>
-      )}
+      <div className="page-header">
+        <div>
+          <h1 className="page-title">{isClient(profile.role) ? 'My Reports' : 'Reports'}</h1>
+          {isClient(profile.role) && (
+            <p className="page-subtitle">Reports from your auditors appear here once they are ready for your review and sign-off.</p>
+          )}
+        </div>
+      </div>
 
       {canPrepareReports(profile.role) && (
-        <form onSubmit={handleCreate} style={{ background: 'white', padding: 16, borderRadius: 8, marginBottom: 24 }}>
-          <h3 style={{ marginTop: 0 }}>Start a report</h3>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <select value={engagementId} onChange={(e) => setEngagementId(e.target.value)} required style={{ padding: 8, flex: 1, minWidth: 200 }}>
+        <form onSubmit={handleCreate} className="card" style={{ marginBottom: 32 }}>
+          <h2 className="card-title" style={{ marginBottom: 16 }}>Start a report</h2>
+          <div className="row" style={{ gap: 12, alignItems: 'stretch' }}>
+            <select value={engagementId} onChange={(e) => setEngagementId(e.target.value)} required style={{ flex: 1, minWidth: 200, width: 'auto' }}>
               <option value="">Choose engagement…</option>
               {engagements.map((eng) => <option key={eng.id} value={eng.id}>{eng.client_name} — {eng.engagement_name}</option>)}
             </select>
-            <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. JE Testing Findings FY2026" required style={{ padding: 8, flex: 2, minWidth: 200 }} />
-            <button type="submit" style={{ padding: '8px 16px', background: '#111', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer' }}>Create draft</button>
+            <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. JE Testing Findings FY2026" required style={{ flex: 2, minWidth: 200, width: 'auto' }} />
+            <button type="submit" className="btn">Create draft</button>
           </div>
-          {error && <p style={{ color: 'crimson', marginBottom: 0 }}>{error}</p>}
+          {error && <div className="alert alert-danger" style={{ marginTop: 16 }}>{error}</div>}
         </form>
       )}
 
       {!isClient(profile.role) && (
-        <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+        <label className="text-2" style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, fontSize: 14 }}>
           <input type="checkbox" checked={onlyWaiting} onChange={(e) => setOnlyWaiting(e.target.checked)} />
           Only show reports waiting for me
         </label>
       )}
 
       {shown.length === 0 ? (
-        <p style={{ color: '#666' }}>No reports yet.</p>
+        <p className="muted">No reports yet.</p>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div className="stack" style={{ gap: 12 }}>
           {shown.map((r) => (
-            <Link key={r.id} href={`/reports/${r.id}`} style={{ textDecoration: 'none', color: 'inherit' }}>
-              <div style={{ background: 'white', padding: 14, borderRadius: 6, display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+            <Link key={r.id} href={`/reports/${r.id}`} className="link-card">
+              <div className="row-between">
                 <div>
-                  <strong>{r.title}</strong>
-                  <p style={{ margin: 0, color: '#666', fontSize: 14 }}>
+                  <p className="link-card-title">{r.title}</p>
+                  <p className="link-card-text">
                     {r.engagements?.client_name} — {r.engagements?.engagement_name}
                   </p>
                 </div>
-                <span style={{ alignSelf: 'center', color: STATUS_COLORS[r.status], whiteSpace: 'nowrap' }}>
+                <span className={STATUS_BADGE[r.status] || 'badge'}>
                   {r.status}{myStatuses.includes(r.status) ? ' · your turn' : ''}
                 </span>
               </div>

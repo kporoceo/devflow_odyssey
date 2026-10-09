@@ -1,18 +1,18 @@
 'use client';
 
 // Small chart pieces for the Analytics page, drawn with plain SVG and HTML
-// (no chart library to install). Colours: one blue for amounts, orange only
-// to pick out weekend/holiday entries, and a light-to-dark blue for heat
-// tables. Dark mode flips them with the rest of the page.
+// (no chart library to install). Colours come from app/globals.css: navy
+// for amounts, ODCC gold only to pick out weekend/holiday entries, and
+// light-to-dark navy for heat tables. Dark mode swaps them automatically.
 
 import { useState } from 'react';
 
-export const BLUE = '#2a78d6';
-export const ORANGE = '#eb6834';
-const HEAT = ['#cde2fb', '#9ec5f4', '#6da7ec', '#3987e5', '#256abf', '#184f95'];
-const INK = '#0b0b0b';
-const MUTED = '#52514e';
-const GRID = '#e4e3df';
+export const BLUE = 'var(--chart-1)';
+export const ORANGE = 'var(--chart-2)';
+const HEAT = [14, 28, 44, 60, 78, 100].map((p) => `color-mix(in srgb, var(--chart-1) ${p}%, var(--surface))`);
+const INK = 'var(--text)';
+const MUTED = 'var(--text-2)';
+const GRID = 'var(--chart-grid)';
 
 export function peso(n) {
   return `₱${Number(n || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -28,10 +28,11 @@ export function pesoShort(n) {
   return `₱${v.toFixed(0)}`;
 }
 
-// The blue header bar above each part of the page, like Arch's dashboard.
+// The heading bar above each part of the page, like Arch's dashboard:
+// navy with a thin gold underline.
 export function SectionTitle({ children }) {
   return (
-    <div style={{ background: '#1f4fa3', color: 'white', padding: '6px 10px', fontWeight: 600, fontSize: 14, borderRadius: '4px 4px 0 0' }}>
+    <div style={{ background: 'var(--navy)', color: '#fff', padding: '9px 16px', fontWeight: 600, fontSize: 13, letterSpacing: '0.02em', borderBottom: '2px solid var(--gold)' }}>
       {children}
     </div>
   );
@@ -39,9 +40,9 @@ export function SectionTitle({ children }) {
 
 export function Panel({ title, children, note }) {
   return (
-    <div style={{ background: 'white', borderRadius: 6, marginBottom: 16 }}>
+    <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden', marginBottom: 16, boxShadow: 'var(--shadow)' }}>
       <SectionTitle>{title}</SectionTitle>
-      <div style={{ padding: 12 }}>
+      <div style={{ padding: 16 }}>
         {note && <p style={{ margin: '0 0 8px', color: MUTED, fontSize: 13 }}>{note}</p>}
         {children}
       </div>
@@ -51,10 +52,10 @@ export function Panel({ title, children, note }) {
 
 export function Tile({ title, value, sub }) {
   return (
-    <div style={{ background: 'white', borderRadius: 6, marginBottom: 12, textAlign: 'center' }}>
+    <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden', marginBottom: 12, textAlign: 'center', boxShadow: 'var(--shadow)' }}>
       <SectionTitle>{title}</SectionTitle>
-      <div style={{ fontSize: 30, padding: '10px 6px 2px', color: INK }}>{value}</div>
-      <div style={{ fontSize: 12, color: MUTED, padding: '0 6px 10px', minHeight: 14 }}>{sub}</div>
+      <div style={{ fontSize: 28, fontWeight: 600, padding: '14px 8px 2px', color: INK, fontVariantNumeric: 'tabular-nums' }}>{value}</div>
+      <div style={{ fontSize: 12, color: MUTED, padding: '0 8px 14px', minHeight: 14 }}>{sub}</div>
     </div>
   );
 }
@@ -97,8 +98,8 @@ export function ColumnChart({ data, format = pesoShort, height = 220, integer = 
           const y = pad.top + innerH - (t / max) * innerH;
           return (
             <g key={i}>
-              <line x1={pad.left} x2={width - pad.right} y1={y} y2={y} stroke={GRID} strokeWidth="1" />
-              <text x={pad.left - 6} y={y + 4} textAnchor="end" fontSize="11" fill={MUTED}>{format(t)}</text>
+              <line x1={pad.left} x2={width - pad.right} y1={y} y2={y} style={{ stroke: GRID }} strokeWidth="1" />
+              <text x={pad.left - 6} y={y + 4} textAnchor="end" fontSize="11" style={{ fill: MUTED }}>{format(t)}</text>
             </g>
           );
         })}
@@ -115,25 +116,25 @@ export function ColumnChart({ data, format = pesoShort, height = 220, integer = 
                 <path
                   d={`M${x},${pad.top + innerH} L${x},${y + r} Q${x},${y} ${x + r},${y}`
                     + ` L${x + barW - r},${y} Q${x + barW},${y} ${x + barW},${y + r} L${x + barW},${pad.top + innerH} Z`}
-                  fill={d.color || BLUE}
+                  style={{ fill: d.color || BLUE }}
                   opacity={hover === null || hover === i ? 1 : 0.55}
                 />
               )}
               {i % showEvery === 0 && (
-                <text x={pad.left + i * step + step / 2} y={height - pad.bottom + 14} textAnchor="middle" fontSize="11" fill={MUTED}>
+                <text x={pad.left + i * step + step / 2} y={height - pad.bottom + 14} textAnchor="middle" fontSize="11" style={{ fill: MUTED }}>
                   {String(d.label).length > maxChars ? `${String(d.label).slice(0, maxChars - 1)}…` : d.label}
                 </text>
               )}
             </g>
           );
         })}
-        <line x1={pad.left} x2={width - pad.right} y1={pad.top + innerH} y2={pad.top + innerH} stroke="#b9b8b2" strokeWidth="1" />
+        <line x1={pad.left} x2={width - pad.right} y1={pad.top + innerH} y2={pad.top + innerH} style={{ stroke: 'var(--border-strong)' }} strokeWidth="1" />
       </svg>
       {hover !== null && (
         <div style={{
           position: 'absolute', top: 0, left: `${((pad.left + hover * step + step / 2) / width) * 100}%`,
-          transform: 'translateX(-50%)', background: 'white', border: '1px solid #ddd', borderRadius: 4,
-          padding: '4px 8px', fontSize: 12, color: INK, pointerEvents: 'none', whiteSpace: 'nowrap', boxShadow: '0 1px 4px rgba(0,0,0,0.12)',
+          transform: 'translateX(-50%)', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-xs)',
+          padding: '4px 8px', fontSize: 12, color: INK, pointerEvents: 'none', whiteSpace: 'nowrap', boxShadow: 'var(--shadow-hover)',
         }}>
           <strong>{data[hover].label}</strong>: {data[hover].tip || format(data[hover].value)}
         </div>
@@ -151,8 +152,8 @@ export function BarList({ rows, format = pesoShort, max, emptyText = 'Nothing to
       {rows.map((r) => (
         <div key={r.label} title={`${r.label}: ${format(r.value)}`} style={{ display: 'grid', gridTemplateColumns: 'minmax(90px, 34%) 1fr 80px', gap: 8, alignItems: 'center' }}>
           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: INK }}>{r.label}</span>
-          <span style={{ background: '#f0efec', borderRadius: 4, height: 14 }}>
-            <span style={{ display: 'block', height: 14, borderRadius: 4, width: `${Math.max(0, Math.min(100, (r.value / top) * 100))}%`, background: r.color || BLUE }} />
+          <span style={{ background: 'var(--surface-2)', borderRadius: 3, height: 12 }}>
+            <span style={{ display: 'block', height: 12, borderRadius: 3, width: `${Math.max(0, Math.min(100, (r.value / top) * 100))}%`, background: r.color || BLUE }} />
           </span>
           <span style={{ textAlign: 'right', color: INK }}>{format(r.value)}</span>
         </div>
@@ -169,11 +170,11 @@ export function HeatTable({ rowLabels, colLabels, value, format = pesoShort, row
   const shade = (v) => {
     if (!v) return { background: 'transparent', color: MUTED };
     const i = Math.min(HEAT.length - 1, Math.floor((Math.abs(v) / (max || 1)) * HEAT.length));
-    return { background: HEAT[i], color: i >= 3 ? 'white' : INK };
+    return { background: HEAT[i], color: i >= 3 ? 'var(--surface)' : INK };
   };
   return (
     <div style={{ overflowX: 'auto' }}>
-      <table style={{ borderCollapse: 'separate', borderSpacing: 2, fontSize: 12 }}>
+      <table className="heat-table" style={{ borderCollapse: 'separate', borderSpacing: 2, fontSize: 12, width: 'auto' }}>
         <thead>
           <tr>
             <th style={{ textAlign: 'left', color: MUTED, fontWeight: 500, padding: '2px 6px' }}>{rowHeader}</th>
@@ -209,7 +210,7 @@ export function DataTable({ columns, rows, maxRows = 200, emptyText = 'No entrie
         <thead>
           <tr>
             {columns.map((c) => (
-              <th key={c.key} style={{ position: 'sticky', top: 0, background: '#f7f7f5', textAlign: c.align || 'left', padding: '5px 6px', color: MUTED, fontWeight: 500, whiteSpace: 'nowrap' }}>
+              <th key={c.key} style={{ position: 'sticky', top: 0, textAlign: c.align || 'left', padding: '7px 8px' }}>
                 {c.label}
               </th>
             ))}
@@ -217,9 +218,9 @@ export function DataTable({ columns, rows, maxRows = 200, emptyText = 'No entrie
         </thead>
         <tbody>
           {rows.slice(0, maxRows).map((r, i) => (
-            <tr key={i} style={{ borderTop: '1px solid #eee' }}>
+            <tr key={i}>
               {columns.map((c) => (
-                <td key={c.key} style={{ padding: '4px 6px', textAlign: c.align || 'left', color: INK, whiteSpace: c.wrap ? 'normal' : 'nowrap' }}>
+                <td key={c.key} style={{ padding: '6px 8px', textAlign: c.align || 'left', color: INK, whiteSpace: c.wrap ? 'normal' : 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
                   {c.format ? c.format(r[c.key], r) : r[c.key]}
                 </td>
               ))}

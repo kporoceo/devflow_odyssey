@@ -10,10 +10,28 @@ import Link from 'next/link';
 import { createClient } from '../../lib/supabaseClient';
 import { fetchAll } from '../../lib/fetchAll';
 import { useProfile } from '../../components/AppShell';
-import { teamOf, isLeadership, isAuditTeam, SIGNOFF_LEVELS, STATUS_COLORS } from '../../lib/roles';
-import { Panel, BarList, BLUE } from '../../components/charts';
+import { teamOf, isLeadership, isAuditTeam, SIGNOFF_LEVELS } from '../../lib/roles';
+import { BarList, BLUE } from '../../components/charts';
 
 const STAGES = ['Draft', 'Returned', 'For Review', 'For Partner Approval', 'For Client Approval', 'Signed Off'];
+
+// Report status colours, from app/globals.css (badges and to-do dots).
+const STATUS_BADGE = {
+  'Draft': 'badge',
+  'Returned': 'badge badge-danger',
+  'For Review': 'badge badge-warning',
+  'For Partner Approval': 'badge badge-warning',
+  'For Client Approval': 'badge badge-warning',
+  'Signed Off': 'badge badge-success',
+};
+const STATUS_DOT = {
+  'Draft': 'var(--muted)',
+  'Returned': 'var(--danger)',
+  'For Review': 'var(--warning)',
+  'For Partner Approval': 'var(--warning)',
+  'For Client Approval': 'var(--warning)',
+  'Signed Off': 'var(--success)',
+};
 
 function when(ts) {
   if (!ts) return '';
@@ -121,7 +139,6 @@ export default function Dashboard() {
 
   if (!profile) return null;
 
-  const card = { background: 'white', padding: 16, borderRadius: 8, textDecoration: 'none', color: 'inherit', display: 'block' };
   const audit = isAuditTeam(profile.role);
   const rows = data?.rows || [];
   const active = rows.filter((r) => r.status !== 'Closed');
@@ -133,18 +150,18 @@ export default function Dashboard() {
   const todo = [];
   (data?.waitingReports || []).forEach((r) => {
     const e = rows.find((x) => x.id === r.engagement_id);
-    todo.push({ href: `/reports/${r.id}`, text: `Sign off "${r.title}"`, sub: `${e ? e.client_name : ''} · ${r.status}`, color: STATUS_COLORS[r.status] });
+    todo.push({ href: `/reports/${r.id}`, text: `Sign off "${r.title}"`, sub: `${e ? e.client_name : ''} · ${r.status}`, color: STATUS_DOT[r.status] });
   });
   if (audit) {
     rows.forEach((r) => {
       if (r.flagged - r.reviewedCount > 0) {
-        todo.push({ href: `/engagements/${r.id}/testing`, text: `Review ${r.flagged - r.reviewedCount} flagged line(s)`, sub: `${r.client_name} – ${r.engagement_name}`, color: '#c60' });
+        todo.push({ href: `/engagements/${r.id}/testing`, text: `Review ${r.flagged - r.reviewedCount} flagged line(s)`, sub: `${r.client_name} – ${r.engagement_name}`, color: 'var(--warning)' });
       }
       if (r.lines > 0 && !r.run) {
         todo.push({ href: `/engagements/${r.id}/testing`, text: `Run JE testing on ${r.lines.toLocaleString()} uploaded lines`, sub: `${r.client_name} – ${r.engagement_name}`, color: BLUE });
       }
       if (r.lines === 0) {
-        todo.push({ href: `/engagements/${r.id}/upload`, text: 'Upload the JE data', sub: `${r.client_name} – ${r.engagement_name}`, color: '#666' });
+        todo.push({ href: `/engagements/${r.id}/upload`, text: 'Upload the JE data', sub: `${r.client_name} – ${r.engagement_name}`, color: 'var(--muted)' });
       }
     });
   }
@@ -157,74 +174,80 @@ export default function Dashboard() {
     { label: 'Reports waiting for you', value: data?.waitingReports.length ?? 0, warn: (data?.waitingReports.length || 0) > 0, href: '/reports?waiting=1' },
   ];
 
-  const th = { textAlign: 'left', padding: '6px 8px', color: '#666', fontWeight: 500, fontSize: 13, whiteSpace: 'nowrap', borderBottom: '1px solid #eee' };
-  const td = { padding: '8px', fontSize: 14, borderBottom: '1px solid #f0f0f0', verticalAlign: 'middle' };
+  const listRow = { display: 'flex', gap: 12, padding: '10px 0', borderBottom: '1px solid var(--border)', textDecoration: 'none', color: 'inherit' };
 
   return (
-    <div style={{ maxWidth: 1100, margin: '32px auto', padding: 24 }}>
-      <h1 style={{ marginBottom: 4 }}>Welcome, {profile.full_name || profile.email}</h1>
-      <p style={{ color: '#666', marginTop: 0 }}>
-        {profile.role} · {teamOf(profile.role)} · {new Date().toLocaleDateString('en-PH', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
-      </p>
+    <div className="page">
+      <div className="page-header">
+        <div>
+          <h1 className="page-title">Welcome, {profile.full_name || profile.email}</h1>
+          <p className="page-subtitle">
+            {profile.role} · {teamOf(profile.role)} · {new Date().toLocaleDateString('en-PH', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
+          </p>
+        </div>
+      </div>
 
-      {!data && <p>Loading…</p>}
+      {!data && <p className="loading">Loading…</p>}
 
       {data && (
-        <>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12, margin: '20px 0' }}>
+        <div className="stack-lg">
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 16 }}>
             {tiles.map((t) => {
               const inner = (
                 <>
-                  <div style={{ fontSize: 30, fontWeight: 'bold', color: t.warn ? '#c60' : 'inherit' }}>{t.value}</div>
-                  <div style={{ color: '#666', fontSize: 13 }}>{t.label}</div>
+                  <div className="stat-label">{t.label}</div>
+                  <div className={t.warn ? 'stat-value text-warning' : 'stat-value'}>{t.value}</div>
                 </>
               );
               return t.href
-                ? <Link key={t.label} href={t.href} style={card}>{inner}</Link>
-                : <div key={t.label} style={card}>{inner}</div>;
+                ? <Link key={t.label} href={t.href} className="stat">{inner}</Link>
+                : <div key={t.label} className="stat">{inner}</div>;
             })}
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16, alignItems: 'start' }}>
-            <Panel title="Needs your attention">
-              {todo.length === 0 && <p style={{ color: '#666', margin: 0 }}>Nothing waiting for you right now.</p>}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 24, alignItems: 'start' }}>
+            <section className="card">
+              <div className="card-header"><h2 className="card-title">Needs your attention</h2></div>
+              {todo.length === 0 && <p className="muted" style={{ margin: 0 }}>Nothing waiting for you right now.</p>}
               {todo.slice(0, 8).map((t, i) => (
-                <Link key={i} href={t.href} style={{ display: 'flex', gap: 10, padding: '8px 0', borderBottom: '1px solid #f0f0f0', textDecoration: 'none', color: 'inherit' }}>
-                  <span style={{ width: 8, height: 8, borderRadius: 4, background: t.color, marginTop: 7, flexShrink: 0 }} />
+                <Link key={i} href={t.href} style={listRow}>
+                  <span style={{ width: 8, height: 8, borderRadius: 2, background: t.color, marginTop: 8, flexShrink: 0 }} />
                   <span>
-                    <span style={{ display: 'block', fontSize: 14 }}>{t.text}</span>
-                    <span style={{ display: 'block', fontSize: 12, color: '#666' }}>{t.sub}</span>
+                    <span style={{ display: 'block', fontSize: 14, color: 'var(--text)' }}>{t.text}</span>
+                    <span className="muted" style={{ display: 'block', fontSize: 12 }}>{t.sub}</span>
                   </span>
                 </Link>
               ))}
-              {todo.length > 8 && <p style={{ fontSize: 12, color: '#666', marginBottom: 0 }}>And {todo.length - 8} more.</p>}
-            </Panel>
+              {todo.length > 8 && <p className="muted" style={{ fontSize: 12, margin: '12px 0 0' }}>And {todo.length - 8} more.</p>}
+            </section>
 
-            <Panel title="Reports by stage">
+            <section className="card">
+              <div className="card-header"><h2 className="card-title">Reports by stage</h2></div>
               <BarList
-                rows={STAGES.map((s) => ({ label: s, value: data.reports.filter((r) => r.status === s).length, color: s === 'Signed Off' ? '#2a7' : BLUE }))}
+                rows={STAGES.map((s) => ({ label: s, value: data.reports.filter((r) => r.status === s).length, color: s === 'Signed Off' ? 'var(--success)' : BLUE }))}
                 format={(n) => String(n)}
                 max={Math.max(1, ...STAGES.map((s) => data.reports.filter((r) => r.status === s).length))}
               />
-              <p style={{ fontSize: 12, color: '#666', marginBottom: 0 }}>
+              <p className="muted" style={{ fontSize: 12, margin: '12px 0 0' }}>
                 {data.reports.length} report(s) in all. Sign-off order: Preparer, A&amp;A Lead, Partner, Client.
               </p>
-            </Panel>
+            </section>
           </div>
 
-          <Panel title="Engagement progress">
-            {rows.length === 0 && <p style={{ color: '#666', margin: 0 }}>No engagements yet.</p>}
+          <section className="card">
+            <div className="card-header"><h2 className="card-title">Engagement progress</h2></div>
+            {rows.length === 0 && <p className="muted" style={{ margin: 0 }}>No engagements yet.</p>}
             {rows.length > 0 && (
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <div className="table-wrap">
+                <table>
                   <thead>
                     <tr>
-                      <th style={th}>Client · Engagement</th>
-                      <th style={{ ...th, textAlign: 'right' }}>Lines</th>
-                      <th style={th}>Last tested</th>
-                      <th style={th}>Flags reviewed</th>
-                      <th style={{ ...th, textAlign: 'right' }}>Open AJEs</th>
-                      <th style={th}>Report</th>
+                      <th>Client · Engagement</th>
+                      <th className="num">Lines</th>
+                      <th>Last tested</th>
+                      <th>Flags reviewed</th>
+                      <th className="num">Open AJEs</th>
+                      <th>Report</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -232,29 +255,29 @@ export default function Dashboard() {
                       const pct = r.flagged ? Math.round((r.reviewedCount / r.flagged) * 100) : null;
                       return (
                         <tr key={r.id}>
-                          <td style={td}>
+                          <td>
                             <Link href={`/engagements/${r.id}`}>{r.engagement_name}</Link>
-                            <div style={{ fontSize: 12, color: '#666' }}>{r.client_name}</div>
+                            <div className="muted" style={{ fontSize: 12 }}>{r.client_name}</div>
                           </td>
-                          <td style={{ ...td, textAlign: 'right' }}>{r.lines.toLocaleString()}</td>
-                          <td style={td}>{day(r.run?.run_at)}</td>
-                          <td style={{ ...td, minWidth: 150 }}>
+                          <td className="num">{r.lines.toLocaleString()}</td>
+                          <td>{day(r.run?.run_at)}</td>
+                          <td style={{ minWidth: 150 }}>
                             {pct === null
-                              ? <span style={{ color: '#666', fontSize: 13 }}>{r.run ? 'No flags' : '—'}</span>
+                              ? <span className="muted small">{r.run ? 'No flags' : '—'}</span>
                               : (
                                 <div title={`${r.reviewedCount} of ${r.flagged} flagged lines reviewed`}>
-                                  <div style={{ background: '#f0efec', borderRadius: 4, height: 8 }}>
-                                    <div style={{ width: `${pct}%`, background: pct === 100 ? '#2a7' : BLUE, height: 8, borderRadius: 4 }} />
+                                  <div className="progress">
+                                    <span style={{ width: `${pct}%`, background: pct === 100 ? 'var(--success)' : BLUE }} />
                                   </div>
-                                  <div style={{ fontSize: 12, color: '#666', marginTop: 2 }}>{r.reviewedCount} of {r.flagged} ({pct}%)</div>
+                                  <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>{r.reviewedCount} of {r.flagged} ({pct}%)</div>
                                 </div>
                               )}
                           </td>
-                          <td style={{ ...td, textAlign: 'right', color: r.openAdjustments ? '#c60' : 'inherit' }}>{r.openAdjustments}</td>
-                          <td style={td}>
+                          <td className={r.openAdjustments ? 'num text-warning' : 'num'}>{r.openAdjustments}</td>
+                          <td>
                             {r.report
-                              ? <Link href={`/reports/${r.report.id}`} style={{ color: STATUS_COLORS[r.report.status] || 'inherit' }}>{r.report.status}</Link>
-                              : <span style={{ color: '#666', fontSize: 13 }}>None yet</span>}
+                              ? <Link href={`/reports/${r.report.id}`} className={STATUS_BADGE[r.report.status] || 'badge'}>{r.report.status}</Link>
+                              : <span className="muted small">None yet</span>}
                           </td>
                         </tr>
                       );
@@ -263,19 +286,19 @@ export default function Dashboard() {
                 </table>
               </div>
             )}
-          </Panel>
+          </section>
 
-          <Panel title="Recent activity">
-            {data.activity.length === 0 && <p style={{ color: '#666', margin: 0 }}>No test runs or sign-offs yet.</p>}
+          <section className="card">
+            <div className="card-header"><h2 className="card-title">Recent activity</h2></div>
+            {data.activity.length === 0 && <p className="muted" style={{ margin: 0 }}>No test runs or sign-offs yet.</p>}
             {data.activity.map((a, i) => (
-              <Link key={i} href={a.href} style={{ display: 'flex', justifyContent: 'space-between', gap: 16, padding: '7px 0', borderBottom: '1px solid #f0f0f0', textDecoration: 'none', color: 'inherit', fontSize: 14 }}>
-                <span>{a.text}</span>
-                <span style={{ color: '#666', fontSize: 12, whiteSpace: 'nowrap' }}>{when(a.at)}</span>
+              <Link key={i} href={a.href} style={{ ...listRow, justifyContent: 'space-between', gap: 16, fontSize: 14 }}>
+                <span style={{ color: 'var(--text)' }}>{a.text}</span>
+                <span className="muted" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>{when(a.at)}</span>
               </Link>
             ))}
-          </Panel>
-
-        </>
+          </section>
+        </div>
       )}
     </div>
   );

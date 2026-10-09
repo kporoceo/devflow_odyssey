@@ -11,7 +11,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '../lib/supabaseClient';
 import { Spinner } from './ui';
-import { isLeadership, isAuditTeam, isClient, isFirmStaff, isSystemAdmin, teamOf, homeFor } from '../lib/roles';
+import { isLeadership, isAuditTeam, isClient, isFirmStaff, isSystemAdmin, homeFor } from '../lib/roles';
 
 const ProfileContext = createContext({ profile: null, refreshProfile: async () => {} });
 
@@ -27,7 +27,7 @@ export function Avatar({ profile, size = 36 }) {
     return <img src={profile.avatar_url} alt="" width={size} height={size} style={{ width: size, height: size, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />;
   }
   return (
-    <span aria-hidden="true" style={{ width: size, height: size, borderRadius: '50%', background: '#3e4c59', color: '#f5f7fa', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: size * 0.4, fontWeight: 600, flexShrink: 0 }}>
+    <span aria-hidden="true" className="avatar-initials" style={{ width: size, height: size, borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: size * 0.4, fontWeight: 600, flexShrink: 0 }}>
       {initials}
     </span>
   );
@@ -151,42 +151,41 @@ export default function AppShell({ children }) {
     return <ProfileContext.Provider value={value}>{children}</ProfileContext.Provider>;
   }
   if (!checked || target) {
-    return <p style={{ padding: 24, display: 'flex', gap: 8, alignItems: 'center' }}><Spinner /> Loading…</p>;
+    return <p className="loading"><Spinner /> Loading…</p>;
   }
 
   const showNav = !profile.must_change_password;
 
   return (
     <ProfileContext.Provider value={value}>
-      <div style={{ display: 'flex', minHeight: '100vh' }}>
+      <div className="app-shell">
         {showNav && (
-          <nav style={{ width: 210, flexShrink: 0, background: '#1f2933', color: '#f5f7fa', padding: '20px 12px', display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <div style={{ fontWeight: 'bold', fontSize: 20, padding: '0 8px 4px' }}>ODYSSEY</div>
-            <Link href="/account" style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '4px 8px 16px', textDecoration: 'none', color: '#9aa5b1', fontSize: 12 }}>
+          <nav className="sidebar" aria-label="Main">
+            <Link href={homeFor(profile.role)} className="sidebar-brand" aria-label="ODYSSEY home">
+              <img src="/brand/odyssey-horizontal-on-dark.svg" alt="ODYSSEY" />
+            </Link>
+            <Link href="/account" className="sidebar-user">
               <Avatar profile={profile} />
-              <span>{profile.full_name || profile.email}<br />{profile.role} · {teamOf(profile.role)}</span>
+              <span>
+                {profile.full_name || profile.email}
+                <br />
+                <span className="sidebar-user-role">{profile.role}</span>
+              </span>
             </Link>
             {navItems(profile.role).map((item) => {
               const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
               return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  style={{ padding: '8px 10px', borderRadius: 4, textDecoration: 'none', color: '#f5f7fa', background: active ? '#3e4c59' : 'transparent' }}
-                >
+                <Link key={item.href} href={item.href} className={`sidebar-link${active ? ' active' : ''}`} aria-current={active ? 'page' : undefined}>
                   {item.label}
                 </Link>
               );
             })}
-            <button
-              onClick={handleLogout}
-              style={{ marginTop: 'auto', padding: '8px 10px', background: 'transparent', color: '#f5f7fa', border: '1px solid #52606d', borderRadius: 4, cursor: 'pointer', textAlign: 'left' }}
-            >
+            <button onClick={handleLogout} className="sidebar-logout">
               Log out
             </button>
           </nav>
         )}
-        <main style={{ flex: 1, minWidth: 0 }}>{children}</main>
+        <main className="app-main">{children}</main>
       </div>
     </ProfileContext.Provider>
   );

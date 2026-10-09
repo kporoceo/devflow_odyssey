@@ -48,33 +48,41 @@ export default function ChangePassword() {
   }
 
   return (
-    <div style={{ maxWidth: 420, margin: '60px auto', padding: 24, background: 'white', borderRadius: 8 }}>
-      {!firstLogin && <BackLink href="/account">Back to My Account</BackLink>}
-      <h1 style={{ marginTop: 0 }}>{firstLogin ? 'Set your own password' : 'Change password'}</h1>
+    <div style={{ maxWidth: 480, margin: '0 auto', padding: '56px 20px 48px' }}>
       {firstLogin && (
-        <p style={{ color: '#666' }}>
-          You logged in with the default password from Firm Leadership. Choose your own password to continue.
-        </p>
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 32 }}>
+          <img src="/brand/odyssey-horizontal.svg" alt="ODYSSEY" className="logo-light" style={{ height: 32 }} />
+          <img src="/brand/odyssey-horizontal-on-dark.svg" alt="ODYSSEY" className="logo-dark" style={{ height: 32 }} />
+        </div>
       )}
+      {!firstLogin && <BackLink href="/account">Back to My Account</BackLink>}
+      <div className="card card-accent" style={{ padding: 32 }}>
+        <h1 className="page-title" style={{ fontSize: 22, marginBottom: firstLogin ? 8 : 24 }}>{firstLogin ? 'Set your own password' : 'Change password'}</h1>
+        {firstLogin && (
+          <p className="text-2" style={{ marginBottom: 24 }}>
+            You logged in with the default password from the System Administrator. Choose your own password to continue.
+          </p>
+        )}
 
-      <form onSubmit={handleSubmit}>
-        <div style={{ marginBottom: 12 }}>
-          <label style={{ display: 'block', marginBottom: 4 }}>New password</label>
-          <PasswordInput value={password} onChange={(e) => setPassword(e.target.value)} placeholder={PASSWORD_EXAMPLE} autoComplete="new-password" />
-          <PasswordChecklist password={password} />
-        </div>
-        <div style={{ marginBottom: 20 }}>
-          <label style={{ display: 'block', marginBottom: 4 }}>Confirm new password</label>
-          <PasswordInput value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder="Type it again" autoComplete="new-password" />
-          {confirm && <p style={{ fontSize: 13, margin: '4px 0 0', color: confirm === password ? '#1e8449' : 'crimson' }}>{confirm === password ? '✓ The passwords match' : 'The passwords don\'t match yet'}</p>}
-        </div>
+        <form onSubmit={handleSubmit}>
+          <div className="field">
+            <label>New password</label>
+            <PasswordInput value={password} onChange={(e) => setPassword(e.target.value)} placeholder={PASSWORD_EXAMPLE} autoComplete="new-password" />
+            <PasswordChecklist password={password} />
+          </div>
+          <div className="field" style={{ marginBottom: 24 }}>
+            <label>Confirm new password</label>
+            <PasswordInput value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder="Type it again" autoComplete="new-password" />
+            {confirm && <p className={`small ${confirm === password ? 'text-success' : 'text-danger'}`} style={{ margin: '6px 0 0' }}>{confirm === password ? '✓ The passwords match' : 'The passwords don\'t match yet'}</p>}
+          </div>
 
-        {error && <p style={{ color: 'crimson' }}>{error}</p>}
+          {error && <div className="alert alert-danger" style={{ marginBottom: 16 }}>{error}</div>}
 
-        <button type="submit" disabled={saving} style={{ width: '100%', padding: 10, background: '#111', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer' }}>
-          {saving ? <span style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}><Spinner /> Saving…</span> : 'Save password'}
-        </button>
-      </form>
+          <button type="submit" disabled={saving} className="btn btn-block">
+            {saving ? <span style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}><Spinner /> Saving…</span> : 'Save password'}
+          </button>
+        </form>
+      </div>
     </div>
   );
 }

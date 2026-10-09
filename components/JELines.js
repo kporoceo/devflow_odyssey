@@ -9,40 +9,40 @@ const money = (n) => (Number(n) > 0 ? Number(n).toLocaleString('en-PH', { minimu
 export default function JELines({ lines, highlightId, flagsByLine = {} }) {
   const totalDebit = lines.reduce((s, l) => s + Number(l.debit || 0), 0);
   const totalCredit = lines.reduce((s, l) => s + Number(l.credit || 0), 0);
-  const th = { textAlign: 'left', padding: '4px 6px', color: '#666', fontWeight: 500, whiteSpace: 'nowrap' };
-  const td = { padding: '4px 6px', borderTop: '1px solid #eee' };
   return (
-    <div style={{ overflowX: 'auto' }}>
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+    <div className="table-wrap">
+      <table className="compact" style={{ fontSize: 13 }}>
         <thead>
           <tr>
-            <th style={th}>Account title</th>
-            <th style={th}>Description</th>
-            <th style={{ ...th, textAlign: 'right' }}>Debit (₱)</th>
-            <th style={{ ...th, textAlign: 'right' }}>Credit (₱)</th>
+            <th>Account title</th>
+            <th>Description</th>
+            <th className="num">Debit (₱)</th>
+            <th className="num">Credit (₱)</th>
           </tr>
         </thead>
         <tbody>
           {lines.map((l) => {
             const flagged = l.id === highlightId || (flagsByLine[l.id] || []).length > 0;
             return (
-              <tr key={l.id} style={{ background: l.id === highlightId ? '#fdeaea' : 'transparent' }}>
-                <td style={{ ...td, paddingLeft: Number(l.credit) > 0 ? 22 : 6 }}>
+              <tr key={l.id} className={l.id === highlightId ? 'row-flagged' : undefined}>
+                <td style={{ paddingLeft: Number(l.credit) > 0 ? 28 : undefined }}>
                   {l.account}
-                  {flagged && <span style={{ color: '#a33', fontSize: 11, marginLeft: 6 }}>flagged</span>}
+                  {flagged && <span className="badge badge-danger" style={{ fontSize: 11, marginLeft: 8 }}>flagged</span>}
                 </td>
-                <td style={{ ...td, color: '#555' }}>{l.description}</td>
-                <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{money(l.debit)}</td>
-                <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{money(l.credit)}</td>
+                <td className="text-2">{l.description}</td>
+                <td className="num">{money(l.debit)}</td>
+                <td className="num">{money(l.credit)}</td>
               </tr>
             );
           })}
-          <tr>
-            <td style={{ ...td, fontWeight: 600 }} colSpan={2}>Total</td>
-            <td style={{ ...td, textAlign: 'right', fontWeight: 600 }}>{money(totalDebit)}</td>
-            <td style={{ ...td, textAlign: 'right', fontWeight: 600 }}>{money(totalCredit)}</td>
-          </tr>
         </tbody>
+        <tfoot>
+          <tr>
+            <td colSpan={2}>Total</td>
+            <td className="num">{money(totalDebit)}</td>
+            <td className="num">{money(totalCredit)}</td>
+          </tr>
+        </tfoot>
       </table>
     </div>
   );

@@ -7,15 +7,15 @@ import { createClient } from '../../../../lib/supabaseClient';
 import { DEFAULT_CRITERIA } from '../../../../lib/jeTesting';
 import { BackLink, BusyLabel, Spinner } from '../../../../components/ui';
 
-const sectionStyle = { borderTop: '1px solid #eee', paddingTop: 16 };
-const hintStyle = { margin: '4px 0 8px', color: '#666', fontSize: 14 };
-const rowStyle = { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 };
+const sectionStyle = { borderTop: '1px solid var(--border)', paddingTop: 20 };
+const hintStyle = { margin: '4px 0 12px', color: 'var(--text-2)', fontSize: 14 };
+const rowStyle = { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10, fontSize: 14, fontWeight: 400, color: 'var(--text)' };
 
 // One rule: a title with an on/off checkbox, a short explanation, and its settings.
 function Rule({ number, title, field, criteria, updateField, hint, children }) {
   return (
     <div style={sectionStyle}>
-      <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 'bold' }}>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontWeight: 600, fontSize: 15, color: 'var(--text)', margin: 0 }}>
         <input type="checkbox" checked={!!criteria[field]} onChange={(e) => updateField(field, e.target.checked)} />
         {number}. {title}
       </label>
@@ -33,7 +33,7 @@ function NumberInput({ field, criteria, updateField, width = 100, step = 'any' }
       step={step}
       value={criteria[field] ?? ''}
       onChange={(e) => updateField(field, e.target.value === '' ? null : Number(e.target.value))}
-      style={{ padding: 8, width }}
+      style={{ width }}
     />
   );
 }
@@ -117,17 +117,21 @@ export default function TestingCriteria({ params }) {
     setSaving(false);
   }
 
-  if (loading) return <p style={{ padding: 24, display: 'flex', gap: 8, alignItems: 'center' }}><Spinner /> Loading…</p>;
+  if (loading) return <p className="loading"><Spinner /> Loading…</p>;
 
   const ruleProps = { criteria, updateField };
 
   return (
-    <div style={{ maxWidth: 640, margin: '40px auto', padding: 24 }}>
+    <div className="page page-narrow">
       <BackLink href={`/engagements/${engagementId}`}>Back to Engagement</BackLink>
-      <h1>Configure Testing Criteria</h1>
-      <p style={{ color: '#666' }}>These 7 rules decide which journal entries get flagged for this engagement. Uncheck a rule to skip it.</p>
+      <div className="page-header">
+        <div>
+          <h1 className="page-title">Configure Testing Criteria</h1>
+          <p className="page-subtitle">These 7 rules decide which journal entries get flagged for this engagement. Uncheck a rule to skip it.</p>
+        </div>
+      </div>
 
-      <form onSubmit={handleSave} style={{ background: 'white', padding: 20, borderRadius: 8, display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <form onSubmit={handleSave} className="card stack-lg">
 
         <Rule number={1} title="Off-Hours Posting" field="flag_off_hours" {...ruleProps}
           hint={`Flag entries keyed in on a weekend or a Philippine holiday. ${holidayCount} holidays are in the Holiday Calendar.`}>
@@ -151,7 +155,7 @@ export default function TestingCriteria({ params }) {
           <div style={rowStyle}>
             <span>Overall materiality: ₱</span>
             <NumberInput field="materiality" width={160} {...ruleProps} />
-            <button type="button" onClick={applyFivePercent} style={{ padding: '6px 10px', cursor: 'pointer' }}>Use 5% as threshold</button>
+            <button type="button" onClick={applyFivePercent} className="btn btn-secondary btn-sm">Use 5% as threshold</button>
           </div>
           <div style={rowStyle}>
             <span>Flag amounts at or above: ₱</span>
@@ -167,7 +171,7 @@ export default function TestingCriteria({ params }) {
           hint="Flag entries in the last days before and the first days after the period end. Entries keyed in after the period end but dated before it are marked post-closing (higher risk).">
           <div style={rowStyle}>
             <span>Period end (MM-DD):</span>
-            <input type="text" value={criteria.period_end || ''} onChange={(e) => updateField('period_end', e.target.value)} style={{ padding: 8, width: 80 }} placeholder="12-31" />
+            <input type="text" value={criteria.period_end || ''} onChange={(e) => updateField('period_end', e.target.value)} style={{ width: 90 }} placeholder="12-31" />
           </div>
           <div style={rowStyle}>
             <NumberInput field="late_days_before" step="1" width={70} {...ruleProps} />
@@ -187,7 +191,7 @@ export default function TestingCriteria({ params }) {
             rows={4}
             value={criteria.preparer_roster || ''}
             onChange={(e) => updateField('preparer_roster', e.target.value)}
-            style={{ padding: 8, width: '100%', boxSizing: 'border-box', fontFamily: 'inherit' }}
+            style={{ marginBottom: 12 }}
           />
           <div style={rowStyle}>
             <span>If the list is empty, flag preparers posting under</span>
@@ -211,21 +215,19 @@ export default function TestingCriteria({ params }) {
           hint="Low priority. For Xero / QuickBooks clients only: flag entries whose Source column says they were keyed in by hand.">
           <div style={rowStyle}>
             <span>Source words that mean manual:</span>
-            <input type="text" value={criteria.manual_source_keywords || ''} onChange={(e) => updateField('manual_source_keywords', e.target.value)} style={{ padding: 8, flex: 1, minWidth: 200 }} />
+            <input type="text" value={criteria.manual_source_keywords || ''} onChange={(e) => updateField('manual_source_keywords', e.target.value)} style={{ flex: 1, minWidth: 200, width: 'auto' }} />
           </div>
         </Rule>
 
         {savedMessage && (
-          <p style={{ color: savedMessage.startsWith('Error') ? 'crimson' : '#2a7' }}>{savedMessage}</p>
+          <p className={`alert ${savedMessage.startsWith('Error') ? 'alert-danger' : 'alert-success'}`} style={{ margin: 0 }}>{savedMessage}</p>
         )}
 
-        <button
-          type="submit"
-          disabled={saving}
-          style={{ padding: '10px 20px', background: '#111', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer' }}
-        >
-          <BusyLabel busy={saving} busyText="Saving…">Save Criteria</BusyLabel>
-        </button>
+        <div className="form-actions" style={{ marginTop: 0 }}>
+          <button type="submit" disabled={saving} className="btn">
+            <BusyLabel busy={saving} busyText="Saving…">Save Criteria</BusyLabel>
+          </button>
+        </div>
       </form>
     </div>
   );

@@ -38,41 +38,39 @@ export default function LoginPage() {
   }
 
   return (
-    <div style={{ maxWidth: 400, margin: '80px auto', padding: 24, background: 'white', borderRadius: 8, boxShadow: '0 1px 4px rgba(0,0,0,0.1)' }}>
-      <h1 style={{ marginBottom: 8 }}>ODYSSEY</h1>
-      <p style={{ color: '#666', marginBottom: 24 }}>Sign in to continue</p>
+    <div className="auth-page">
+      <div style={{ width: '100%', maxWidth: 420 }}>
+        <div className="auth-card">
+          <div className="auth-brand">
+            <img src="/brand/odyssey-vertical.svg" alt="ODYSSEY" className="logo-light" />
+            <img src="/brand/odyssey-vertical-on-dark.svg" alt="ODYSSEY" className="logo-dark" />
+          </div>
+          <p className="auth-subtitle">Sign in to continue</p>
 
-      <form onSubmit={handleSubmit}>
-        <div style={{ marginBottom: 12 }}>
-          <label style={{ display: 'block', marginBottom: 4 }}>Email</label>
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            style={{ width: '100%', padding: 8, boxSizing: 'border-box' }}
-          />
+          <form onSubmit={handleSubmit}>
+            <div className="field">
+              <label htmlFor="email">Email</label>
+              <input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="email" />
+            </div>
+
+            <div className="field">
+              <label htmlFor="password">Password</label>
+              <PasswordInput id="password" value={password} onChange={(e) => setPassword(e.target.value)} />
+            </div>
+
+            {error && <p className="alert alert-danger">{error}</p>}
+
+            <button type="submit" disabled={loading} className="btn btn-block" style={{ marginTop: 8 }}>
+              {loading ? <><Spinner /> Signing in…</> : 'Sign in'}
+            </button>
+          </form>
+
+          <p className="muted small" style={{ marginTop: 20, marginBottom: 0, textAlign: 'center' }}>
+            No account yet? Accounts are created by the firm&apos;s System Administrator.
+          </p>
         </div>
-
-        <div style={{ marginBottom: 20 }}>
-          <label style={{ display: 'block', marginBottom: 4 }}>Password</label>
-          <PasswordInput value={password} onChange={(e) => setPassword(e.target.value)} />
-        </div>
-
-        {error && <p style={{ color: 'crimson', marginBottom: 12 }}>{error}</p>}
-
-        <button
-          type="submit"
-          disabled={loading}
-          style={{ width: '100%', padding: 10, background: '#111', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer' }}
-        >
-          {loading ? <span style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}><Spinner /> Signing in…</span> : 'Sign In'}
-        </button>
-      </form>
-
-      <p style={{ marginTop: 16, color: '#666', fontSize: 14 }}>
-        No account yet? Accounts are created by the firm&apos;s System Administrator.
-      </p>
+        <p className="auth-footer">Oroceo, Dimandal &amp; Co. CPAs</p>
+      </div>
     </div>
   );
 }

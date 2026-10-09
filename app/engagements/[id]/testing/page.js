@@ -12,9 +12,9 @@ import JELines from '../../../../components/JELines';
 import { BackLink, BusyLabel, ClaudeTag, Spinner } from '../../../../components/ui';
 
 const STATUS_STYLE = {
-  on: { label: 'Ran', color: '#2a7' },
-  off: { label: 'Off', color: '#888' },
-  na: { label: 'Not applicable', color: '#a70' },
+  on: { label: 'Ran', className: 'badge badge-success' },
+  off: { label: 'Off', className: 'badge' },
+  na: { label: 'Not applicable', className: 'badge badge-warning' },
 };
 
 export default function RunJETesting({ params }) {
@@ -196,7 +196,7 @@ export default function RunJETesting({ params }) {
     setAiBusy(false);
   }
 
-  if (loading) return <p style={{ padding: 24, display: 'flex', gap: 8, alignItems: 'center' }}><Spinner /> Loading the journal entries…</p>;
+  if (loading) return <p className="loading"><Spinner /> Loading the journal entries…</p>;
 
   const flagged = results ? results.filter((r) => r.flags.length > 0) : [];
   const countByRule = {};
@@ -208,134 +208,140 @@ export default function RunJETesting({ params }) {
   });
 
   return (
-    <div style={{ maxWidth: 800, margin: '40px auto', padding: 24 }}>
+    <div className="page">
       <BackLink href={`/engagements/${engagementId}`}>Back to Engagement</BackLink>
-      <h1>Run JE Testing</h1>
+      <div className="page-header">
+        <div>
+          <h1 className="page-title">Run JE Testing</h1>
+          <p className="page-subtitle">
+            {loading ? <span style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}><Spinner /> Loading the journal entries…</span> : `${entries.length} journal entry lines loaded for this engagement.`}
+          </p>
+        </div>
+        {entries.length > 0 && !results && (
+          <button
+            onClick={handleRun}
+            disabled={running}
+            className="btn"
+            style={{ fontSize: 15, padding: '11px 22px' }}
+          >
+            <BusyLabel busy={running} busyText="Running the 7 rules…">Run JE Testing</BusyLabel>
+          </button>
+        )}
+      </div>
       {inactive && (
-        <p style={{ background: '#f3f3f3', padding: 12, borderRadius: 6 }}>
+        <p className="alert alert-warning" style={{ marginBottom: 24 }}>
           This engagement is <strong>Inactive</strong>. You can look at the results, but new runs can&apos;t be saved until Firm Leadership reactivates it.
         </p>
       )}
-      <p style={{ color: '#666' }}>
-        {loading ? <span style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}><Spinner /> Loading the journal entries…</span> : `${entries.length} journal entry lines loaded for this engagement.`}
-      </p>
 
       {!loading && entries.length === 0 && (
-        <div style={{ background: '#fff8e6', border: '1px solid #e8c468', padding: 16, borderRadius: 8, marginBottom: 16 }}>
+        <div className="alert alert-warning" style={{ marginBottom: 24 }}>
           No journal entries found. <Link href={`/engagements/${engagementId}/upload`}>Upload JE data</Link> first.
         </div>
       )}
 
-      {entries.length > 0 && !results && (
-        <button
-          onClick={handleRun}
-          disabled={running}
-          style={{ padding: '12px 24px', background: '#111', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 16 }}
-        >
-          <BusyLabel busy={running} busyText="Running the 7 rules…">Run JE Testing</BusyLabel>
-        </button>
-      )}
-
       {results && (
-        <div>
-          <div style={{ background: 'white', padding: 20, borderRadius: 8, marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div className="stack-lg">
+          <div className="card card-accent row-between">
             <div>
               <p style={{ margin: 0, fontSize: 18 }}>
                 <strong>{flagged.length}</strong> of <strong>{results.length}</strong> entries flagged
               </p>
-              {saveMessage && <p style={{ margin: '8px 0 0', color: saveMessage.startsWith('Error') ? 'crimson' : '#2a7' }}>{saveMessage}</p>}
+              {saveMessage && <p className={`alert ${saveMessage.startsWith('Error') ? 'alert-danger' : 'alert-success'}`} style={{ margin: '12px 0 0' }}>{saveMessage}</p>}
             </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button onClick={handleRun} style={{ padding: '8px 16px', cursor: 'pointer' }}>Re-run</button>
+            <div className="row">
+              <button onClick={handleRun} className="btn btn-secondary">Re-run</button>
               <button
                 onClick={handleSaveResults}
                 disabled={saving || inactive}
-                style={{ padding: '8px 16px', background: '#111', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer' }}
+                className="btn"
               >
                 <BusyLabel busy={saving} busyText="Saving…">Save Results</BusyLabel>
               </button>
             </div>
           </div>
 
-          <div style={{ background: 'white', padding: 16, borderRadius: 8, marginBottom: 16 }}>
-            <strong>Rules</strong>
-            <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: 8, fontSize: 14 }}>
-              <thead>
-                <tr style={{ textAlign: 'left', color: '#666' }}>
-                  <th style={{ padding: '6px 4px', fontWeight: 500 }}>Rule</th>
-                  <th style={{ padding: '6px 4px', fontWeight: 500 }}>Status</th>
-                  <th style={{ padding: '6px 4px', fontWeight: 500, textAlign: 'right' }}>Flagged</th>
-                  <th style={{ padding: '6px 4px', fontWeight: 500 }}>Note</th>
-                </tr>
-              </thead>
-              <tbody>
-                {ruleStatus.map((s, i) => (
-                  <tr key={s.rule} style={{ borderTop: '1px solid #eee' }}>
-                    <td style={{ padding: '6px 4px', whiteSpace: 'nowrap' }}>{i + 1}. {RULE_LABELS[s.rule]}</td>
-                    <td style={{ padding: '6px 4px', color: STATUS_STYLE[s.status].color, whiteSpace: 'nowrap' }}>{STATUS_STYLE[s.status].label}</td>
-                    <td style={{ padding: '6px 4px', textAlign: 'right' }}>{s.status === 'on' ? `${countByRule[s.rule] || 0} flagged` : ''}</td>
-                    <td style={{ padding: '6px 4px', color: '#666' }}>{s.status === 'on' && !s.note ? '' : s.note}</td>
+          <div className="card">
+            <h2 className="card-title" style={{ marginBottom: 16 }}>Rules</h2>
+            <div className="table-wrap">
+              <table className="compact">
+                <thead>
+                  <tr>
+                    <th>Rule</th>
+                    <th>Status</th>
+                    <th className="num">Flagged</th>
+                    <th>Note</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {ruleStatus.map((s, i) => (
+                    <tr key={s.rule}>
+                      <td style={{ whiteSpace: 'nowrap' }}>{i + 1}. {RULE_LABELS[s.rule]}</td>
+                      <td style={{ whiteSpace: 'nowrap' }}><span className={STATUS_STYLE[s.status].className}>{STATUS_STYLE[s.status].label}</span></td>
+                      <td className="num">{s.status === 'on' ? `${countByRule[s.rule] || 0} flagged` : ''}</td>
+                      <td className="text-2">{s.status === 'on' && !s.note ? '' : s.note}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
 
           {flagged.length > 0 && (
-            <div style={{ background: 'white', padding: 16, borderRadius: 8, marginBottom: 16 }}>
-              <strong>Review the flags</strong>
-              <p style={{ color: '#666', fontSize: 14, margin: '4px 0 12px' }}>
+            <div className="card">
+              <h2 className="card-title">Review the flags</h2>
+              <p className="card-subtitle">
                 Riskiest first. For each one, pick your decision and write a comment. Claude can explain a flag and draft
                 the comment, but only you decide. {Object.keys(reviews).filter((id) => flagged.some((f) => f.id === id)).length} of {flagged.length} reviewed.
               </p>
               <button
                 onClick={() => explainNext(sortedFlagged)}
                 disabled={aiBusy || sortedFlagged.every((e) => aiNotes[e.id])}
-                style={{ padding: '8px 14px', background: '#3b4cca', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer' }}
+                className="btn btn-ai"
               >
                 <BusyLabel busy={aiBusy} busyText="Claude is explaining…">
                   {sortedFlagged.every((e) => aiNotes[e.id]) ? 'Claude explained every flag' : 'Ask Claude to explain the next 10'}
                 </BusyLabel>
               </button>
-              {aiBusy && <p style={{ fontSize: 13, color: '#666', marginBottom: 0 }}>This can take up to a minute.</p>}
-              {aiMessage && <p style={{ color: '#a70', marginBottom: 0 }}>{aiMessage}</p>}
-              <p style={{ fontSize: 12, color: '#666', marginBottom: 0 }}><ClaudeTag />AI features in ODYSSEY use Claude, by Anthropic.</p>
+              {aiBusy && <p className="hint" style={{ marginBottom: 0 }}>This can take up to a minute.</p>}
+              {aiMessage && <p className="alert alert-warning" style={{ margin: '12px 0 0' }}>{aiMessage}</p>}
+              <p className="muted" style={{ fontSize: 12, margin: '16px 0 0' }}><ClaudeTag />AI features in ODYSSEY use Claude, by Anthropic.</p>
             </div>
           )}
 
           {flagged.length === 0 ? (
-            <p style={{ color: '#666' }}>No entries were flagged under the current testing criteria.</p>
+            <p className="muted">No entries were flagged under the current testing criteria.</p>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div className="stack">
               {sortedFlagged.map((entry) => (
-                <div key={entry.id} style={{ background: 'white', padding: 16, borderRadius: 8, borderLeft: '4px solid crimson' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <div key={entry.id} className="card" style={{ borderLeft: '3px solid var(--danger)' }}>
+                  <div className="row-between" style={{ alignItems: 'baseline' }}>
                     <strong>
                       <Link href={`/engagements/${engagementId}/entries/${entry.id}`}>{entry.je_number ? `JE ${entry.je_number}` : 'Open JE'}</Link>
                       {' · '}{entry.account}
                     </strong>
-                    <span>
+                    <span className="num" style={{ fontWeight: 500 }}>
                       {entry.debit > 0 ? `Dr ₱${Number(entry.debit).toLocaleString()}` : `Cr ₱${Number(entry.credit).toLocaleString()}`}
                     </span>
                   </div>
-                  <p style={{ margin: '4px 0', color: '#666' }}>
+                  <p className="text-2 small" style={{ margin: '4px 0 0' }}>
                     {entry.description} — entered {entry.entry_date}
                     {entry.effective_date ? `, effective ${entry.effective_date}` : ''}
                     {entry.entered_by ? `, by ${entry.entered_by}` : ''}
                   </p>
-                  <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
                     {entry.flags.map((f, i) => (
                       <div key={i} style={{ fontSize: 13 }}>
-                        <span style={{ background: '#fdeaea', color: '#a33', padding: '2px 8px', borderRadius: 4, marginRight: 8 }}>
+                        <span className="badge badge-danger" style={{ marginRight: 8 }}>
                           {RULE_LABELS[f.rule] || f.rule}
                         </span>
-                        <span style={{ color: '#666' }}>{f.reason}</span>
+                        <span className="text-2">{f.reason}</span>
                       </div>
                     ))}
                   </div>
-                  <details style={{ marginTop: 8 }}>
-                    <summary style={{ cursor: 'pointer', fontSize: 13, color: '#3b4cca' }}>Show the whole journal entry ({linesOfSameJE(entry).length} lines)</summary>
-                    <div style={{ marginTop: 6 }}><JELines lines={linesOfSameJE(entry)} highlightId={entry.id} /></div>
+                  <details style={{ marginTop: 12 }}>
+                    <summary style={{ fontSize: 13 }}>Show the whole journal entry ({linesOfSameJE(entry).length} lines)</summary>
+                    <div style={{ marginTop: 8 }}><JELines lines={linesOfSameJE(entry)} highlightId={entry.id} /></div>
                   </details>
                   <FlagReview
                     engagementId={engagementId}

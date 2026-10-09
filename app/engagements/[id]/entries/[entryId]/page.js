@@ -66,103 +66,112 @@ export default function JEDetail({ params }) {
 
   if (error) {
     return (
-      <div style={{ maxWidth: 860, margin: '40px auto', padding: 24 }}>
+      <div className="page page-narrow" style={{ maxWidth: 900 }}>
         <BackLink href={`/engagements/${engagementId}`}>Back to Engagement</BackLink>
-        <p>{error}</p>
+        <div className="alert alert-danger">{error}</div>
       </div>
     );
   }
-  if (!data) return <p style={{ padding: 24, display: 'flex', gap: 8, alignItems: 'center' }}><Spinner /> Loading the journal entry…</p>;
+  if (!data) return <p className="loading"><Spinner /> Loading the journal entry…</p>;
 
   const { line, lines, eng, run, flagsByLine, reviews, adjustments } = data;
-  const box = { background: 'white', padding: 20, borderRadius: 8, marginBottom: 16 };
-  const row = { display: 'flex', gap: 12, padding: '4px 0', fontSize: 14 };
-  const label = { width: 150, color: '#666', flexShrink: 0 };
+  const row = { display: 'flex', gap: 16, padding: '8px 0', fontSize: 14, borderBottom: '1px solid var(--border)' };
+  const lastRow = { ...row, borderBottom: 'none' };
+  const label = { width: 160, color: 'var(--text-2)', flexShrink: 0 };
   const flaggedLines = lines.filter((l) => (flagsByLine[l.id] || []).length > 0);
   const lineName = (id) => lines.find((l) => l.id === id)?.account || 'a line';
+  const statusBadge = (status) => (status === 'Accepted' ? 'badge badge-success' : status === 'Rejected' ? 'badge badge-danger' : 'badge badge-warning');
 
   return (
-    <div style={{ maxWidth: 860, margin: '40px auto', padding: 24 }}>
-      <button onClick={back} style={{ background: 'none', border: 'none', color: '#3b4cca', cursor: 'pointer', padding: 0, marginBottom: 16, fontSize: 'inherit', textDecoration: 'underline' }}>
+    <div className="page page-narrow" style={{ maxWidth: 900 }}>
+      <button onClick={back} className="back-link" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, font: 'inherit', fontSize: 14 }}>
         &larr; Back
       </button>
-      <p style={{ color: '#666', margin: 0 }}>{eng?.client_name} — {eng?.engagement_name}</p>
-      <h1 style={{ margin: '4px 0 16px' }}>{line.je_number ? `Journal entry ${line.je_number}` : 'Journal entry'}</h1>
-
-      <div style={box}>
-        <div style={row}><span style={label}>Posting date</span><span>{line.entry_date}</span></div>
-        <div style={row}><span style={label}>Effective date</span><span>{line.effective_date || '—'}</span></div>
-        <div style={row}><span style={label}>Prepared by</span><span>{line.entered_by || '—'}</span></div>
-        <div style={row}><span style={label}>Source</span><span>{line.source || '—'}</span></div>
-        <div style={row}><span style={label}>Lines</span><span>{lines.length}</span></div>
+      <div className="page-header">
+        <div>
+          <p className="text-2" style={{ margin: '0 0 4px', fontSize: 14 }}>{eng?.client_name} — {eng?.engagement_name}</p>
+          <h1 className="page-title">{line.je_number ? `Journal entry ${line.je_number}` : 'Journal entry'}</h1>
+        </div>
       </div>
 
-      <div style={box}>
-        <h3 style={{ marginTop: 0 }}>Lines</h3>
-        <JELines lines={lines} highlightId={line.id} flagsByLine={flagsByLine} />
-      </div>
+      <div className="stack">
+        <div className="card">
+          <div style={row}><span style={label}>Posting date</span><span>{line.entry_date}</span></div>
+          <div style={row}><span style={label}>Effective date</span><span>{line.effective_date || '—'}</span></div>
+          <div style={row}><span style={label}>Prepared by</span><span>{line.entered_by || '—'}</span></div>
+          <div style={row}><span style={label}>Source</span><span>{line.source || '—'}</span></div>
+          <div style={lastRow}><span style={label}>Lines</span><span>{lines.length}</span></div>
+        </div>
 
-      <div style={box}>
-        <h3 style={{ marginTop: 0 }}>Flags</h3>
-        {!run && <p style={{ color: '#666', margin: 0 }}>No JE testing run has been saved for this engagement yet.</p>}
-        {run && flaggedLines.length === 0 && <p style={{ color: '#666', margin: 0 }}>Not flagged in the latest saved run ({new Date(run.run_at).toLocaleDateString('en-PH', { dateStyle: 'medium' })}).</p>}
-        {flaggedLines.map((l) => (
-          <div key={l.id} style={{ marginBottom: 8 }}>
-            <strong style={{ fontSize: 14 }}>{l.account}</strong>
-            {flagsByLine[l.id].map((f, i) => (
-              <div key={i} style={{ fontSize: 13, marginTop: 4 }}>
-                <span style={{ background: '#fdeaea', color: '#a33', padding: '2px 8px', borderRadius: 4, marginRight: 8 }}>{RULE_LABELS[f.rule] || f.rule}</span>
-                <span style={{ color: '#666' }}>{f.reason}</span>
+        <div className="card">
+          <h3 className="card-title" style={{ marginBottom: 16 }}>Lines</h3>
+          <JELines lines={lines} highlightId={line.id} flagsByLine={flagsByLine} />
+        </div>
+
+        <div className="card">
+          <h3 className="card-title" style={{ marginBottom: 16 }}>Flags</h3>
+          {!run && <p className="muted" style={{ margin: 0 }}>No JE testing run has been saved for this engagement yet.</p>}
+          {run && flaggedLines.length === 0 && <p className="muted" style={{ margin: 0 }}>Not flagged in the latest saved run ({new Date(run.run_at).toLocaleDateString('en-PH', { dateStyle: 'medium' })}).</p>}
+          {flaggedLines.map((l) => (
+            <div key={l.id} style={{ marginBottom: 12 }}>
+              <strong style={{ fontSize: 14, fontWeight: 600 }}>{l.account}</strong>
+              {flagsByLine[l.id].map((f, i) => (
+                <div key={i} style={{ fontSize: 13, marginTop: 6, display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
+                  <span className="badge badge-danger">{RULE_LABELS[f.rule] || f.rule}</span>
+                  <span className="text-2">{f.reason}</span>
+                </div>
+              ))}
+            </div>
+          ))}
+          {profile && isAuditTeam(profile.role) && flaggedLines.length > 0 && (
+            <p style={{ margin: '16px 0 0', fontSize: 14 }}>
+              <Link href={`/engagements/${engagementId}/testing`}>Review the flags on Run JE Testing &rarr;</Link>
+            </p>
+          )}
+        </div>
+
+        <div className="card">
+          <h3 className="card-title" style={{ marginBottom: 16 }}>Auditor&apos;s decision</h3>
+          {reviews.length === 0 && <p className="muted" style={{ margin: 0 }}>Not reviewed yet.</p>}
+          {reviews.length > 0 && (
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Line</th>
+                    <th>Decision</th>
+                    <th>Comment</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {reviews.map((r) => (
+                    <tr key={r.id}>
+                      <td>{lineName(r.journal_entry_id)}</td>
+                      <td style={{ whiteSpace: 'nowrap' }}>{DECISIONS[r.disposition] || r.disposition}</td>
+                      <td className="text-2">{r.comment}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {adjustments.length > 0 && (
+          <div className="card">
+            <h3 className="card-title" style={{ marginBottom: 16 }}>Proposed adjusting entry</h3>
+            {adjustments.map((a) => (
+              <div key={a.id} style={{ marginBottom: 16 }}>
+                <p style={{ margin: '0 0 8px' }}>
+                  {a.description} · <span className={statusBadge(a.status)}>{a.status}</span>
+                  {a.client_comment ? ` · client: "${a.client_comment}"` : ''}
+                </p>
+                <JELines lines={a.lines.map((l, i) => ({ ...l, id: `${a.id}-${i}`, description: '' }))} />
               </div>
             ))}
           </div>
-        ))}
-        {profile && isAuditTeam(profile.role) && flaggedLines.length > 0 && (
-          <p style={{ margin: '12px 0 0', fontSize: 14 }}>
-            <Link href={`/engagements/${engagementId}/testing`}>Review the flags on Run JE Testing &rarr;</Link>
-          </p>
         )}
       </div>
-
-      <div style={box}>
-        <h3 style={{ marginTop: 0 }}>Auditor&apos;s decision</h3>
-        {reviews.length === 0 && <p style={{ color: '#666', margin: 0 }}>Not reviewed yet.</p>}
-        {reviews.length > 0 && (
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
-            <thead>
-              <tr style={{ textAlign: 'left', color: '#666' }}>
-                <th style={{ padding: '4px 6px', fontWeight: 500 }}>Line</th>
-                <th style={{ padding: '4px 6px', fontWeight: 500 }}>Decision</th>
-                <th style={{ padding: '4px 6px', fontWeight: 500 }}>Comment</th>
-              </tr>
-            </thead>
-            <tbody>
-              {reviews.map((r) => (
-                <tr key={r.id} style={{ borderTop: '1px solid #eee' }}>
-                  <td style={{ padding: '6px' }}>{lineName(r.journal_entry_id)}</td>
-                  <td style={{ padding: '6px', whiteSpace: 'nowrap' }}>{DECISIONS[r.disposition] || r.disposition}</td>
-                  <td style={{ padding: '6px', color: '#555' }}>{r.comment}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
-
-      {adjustments.length > 0 && (
-        <div style={box}>
-          <h3 style={{ marginTop: 0 }}>Proposed adjusting entry</h3>
-          {adjustments.map((a) => (
-            <div key={a.id} style={{ marginBottom: 12 }}>
-              <p style={{ margin: '0 0 6px' }}>
-                {a.description} · <strong style={{ color: a.status === 'Accepted' ? '#2a7' : a.status === 'Rejected' ? 'crimson' : '#c60' }}>{a.status}</strong>
-                {a.client_comment ? ` · client: "${a.client_comment}"` : ''}
-              </p>
-              <JELines lines={a.lines.map((l, i) => ({ ...l, id: `${a.id}-${i}`, description: '' }))} />
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   );
 }
