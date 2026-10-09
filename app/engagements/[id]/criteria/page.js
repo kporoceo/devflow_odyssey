@@ -4,19 +4,43 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '../../../../lib/supabaseClient';
+import { DEFAULT_CRITERIA } from '../../../../lib/jeTesting';
 
-const DEFAULTS = {
-  round_dollar_threshold: 1000,
-  off_hours_start: '19:00',
-  off_hours_end: '06:00',
-  late_period_days: 5,
-  flag_direct_gl: true,
-  flag_unusual_accounts: true,
-};
+const sectionStyle = { borderTop: '1px solid #eee', paddingTop: 16 };
+const hintStyle = { margin: '4px 0 8px', color: '#666', fontSize: 14 };
+const rowStyle = { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 };
+
+// One rule: a title with an on/off checkbox, a short explanation, and its settings.
+function Rule({ number, title, field, criteria, updateField, hint, children }) {
+  return (
+    <div style={sectionStyle}>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 'bold' }}>
+        <input type="checkbox" checked={!!criteria[field]} onChange={(e) => updateField(field, e.target.checked)} />
+        {number}. {title}
+      </label>
+      <p style={hintStyle}>{hint}</p>
+      {criteria[field] && children}
+    </div>
+  );
+}
+
+function NumberInput({ field, criteria, updateField, width = 100, step = 'any' }) {
+  return (
+    <input
+      type="number"
+      min="0"
+      step={step}
+      value={criteria[field] ?? ''}
+      onChange={(e) => updateField(field, e.target.value === '' ? null : Number(e.target.value))}
+      style={{ padding: 8, width }}
+    />
+  );
+}
 
 export default function TestingCriteria({ params }) {
   const { id: engagementId } = params;
-  const [criteria, setCriteria] = useState(DEFAULTS);
+  const [criteria, setCriteria] = useState(DEFAULT_CRITERIA);
+  const [holidayCount, setHolidayCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [savedMessage, setSavedMessage] = useState('');
@@ -38,15 +62,17 @@ export default function TestingCriteria({ params }) {
         .single();
 
       if (data) {
-        setCriteria({
-          round_dollar_threshold: data.round_dollar_threshold,
-          off_hours_start: data.off_hours_start?.slice(0, 5) || DEFAULTS.off_hours_start,
-          off_hours_end: data.off_hours_end?.slice(0, 5) || DEFAULTS.off_hours_end,
-          late_period_days: data.late_period_days,
-          flag_direct_gl: data.flag_direct_gl,
-          flag_unusual_accounts: data.flag_unusual_accounts,
+        // Keep only the settings this page edits; fall back to the default
+        // for any column that is still empty.
+        const merged = { ...DEFAULT_CRITERIA };
+        Object.keys(DEFAULT_CRITERIA).forEach((key) => {
+          if (data[key] !== null && data[key] !== undefined) merged[key] = data[key];
         });
+        setCriteria(merged);
       }
+
+      const { count } = await supabase.from('holidays').select('*', { count: 'exact', head: true });
+      setHolidayCount(count || 0);
       setLoading(false);
     }
     load();
@@ -55,6 +81,12 @@ export default function TestingCriteria({ params }) {
   function updateField(field, value) {
     setCriteria((prev) => ({ ...prev, [field]: value }));
     setSavedMessage('');
+  }
+
+  // Clearly trivial threshold = about 5% of overall materiality (PSA 320 practice).
+  function applyFivePercent() {
+    if (!(criteria.materiality > 0)) return;
+    updateField('round_min_amount', Math.round(criteria.materiality * 0.05));
   }
 
   async function handleSave(e) {
@@ -86,77 +118,103 @@ export default function TestingCriteria({ params }) {
 
   if (loading) return <p style={{ padding: 24 }}>Loading...</p>;
 
+  const ruleProps = { criteria, updateField };
+
   return (
-    <div style={{ maxWidth: 600, margin: '40px auto', padding: 24 }}>
+    <div style={{ maxWidth: 640, margin: '40px auto', padding: 24 }}>
       <Link href={`/engagements/${engagementId}`} style={{ display: 'inline-block', marginBottom: 16 }}>
         &larr; Back to Engagement
       </Link>
       <h1>Configure Testing Criteria</h1>
-      <p style={{ color: '#666' }}>These thresholds control how the JE testing engine flags entries for this engagement.</p>
+      <p style={{ color: '#666' }}>These 7 rules decide which journal entries get flagged for this engagement. Uncheck a rule to skip it.</p>
 
-      <form onSubmit={handleSave} style={{ background: 'white', padding: 20, borderRadius: 8, display: 'flex', flexDirection: 'column', gap: 20 }}>
+      <form onSubmit={handleSave} style={{ background: 'white', padding: 20, borderRadius: 8, display: 'flex', flexDirection: 'column', gap: 16 }}>
 
-        <div>
-          <label style={{ display: 'block', fontWeight: 'bold', marginBottom: 4 }}>1. Round-Dollar Amounts</label>
-          <p style={{ margin: '0 0 8px', color: '#666', fontSize: 14 }}>Flag entries that are an exact multiple of this amount.</p>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span>₱</span>
-            <input
-              type="number"
-              min="1"
-              value={criteria.round_dollar_threshold}
-              onChange={(e) => updateField('round_dollar_threshold', parseFloat(e.target.value))}
-              style={{ padding: 8, width: 150 }}
-            />
-          </div>
-        </div>
-
-        <div>
-          <label style={{ display: 'block', fontWeight: 'bold', marginBottom: 4 }}>2. Off-Hours Postings</label>
-          <p style={{ margin: '0 0 8px', color: '#666', fontSize: 14 }}>Flag entries posted between these times.</p>
-          <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-            <input type="time" value={criteria.off_hours_start} onChange={(e) => updateField('off_hours_start', e.target.value)} style={{ padding: 8 }} />
-            <span>to</span>
-            <input type="time" value={criteria.off_hours_end} onChange={(e) => updateField('off_hours_end', e.target.value)} style={{ padding: 8 }} />
-          </div>
-        </div>
-
-        <div>
-          <label style={{ display: 'block', fontWeight: 'bold', marginBottom: 4 }}>3. Late-Period Adjustments</label>
-          <p style={{ margin: '0 0 8px', color: '#666', fontSize: 14 }}>Flag entries posted within this many days of period-end.</p>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <input
-              type="number"
-              min="0"
-              value={criteria.late_period_days}
-              onChange={(e) => updateField('late_period_days', parseInt(e.target.value, 10))}
-              style={{ padding: 8, width: 100 }}
-            />
-            <span>days</span>
-          </div>
-        </div>
-
-        <div>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 'bold' }}>
-            <input
-              type="checkbox"
-              checked={criteria.flag_direct_gl}
-              onChange={(e) => updateField('flag_direct_gl', e.target.checked)}
-            />
-            4. Flag Direct General Ledger Entries
+        <Rule number={1} title="Off-Hours Posting" field="flag_off_hours" {...ruleProps}
+          hint={`Flag entries keyed in on a weekend or a Philippine holiday. ${holidayCount} holidays are in the Holiday Calendar.`}>
+          <label style={rowStyle}>
+            <input type="checkbox" checked={!!criteria.flag_weekends} onChange={(e) => updateField('flag_weekends', e.target.checked)} />
+            Flag weekends too (uncheck for clients that normally work weekends, like retail)
           </label>
-        </div>
+        </Rule>
 
-        <div>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 'bold' }}>
-            <input
-              type="checkbox"
-              checked={criteria.flag_unusual_accounts}
-              onChange={(e) => updateField('flag_unusual_accounts', e.target.checked)}
-            />
-            5. Flag Unusual Account Combinations
-          </label>
-        </div>
+        <Rule number={2} title="Posting Lag" field="flag_posting_lag" {...ruleProps}
+          hint="Flag entries keyed in too long after their effective date, or before it. Needs an Effective Date column.">
+          <div style={rowStyle}>
+            <span>Maximum lag:</span>
+            <NumberInput field="max_posting_lag_days" step="1" {...ruleProps} />
+            <span>days (60 allows two monthly closes)</span>
+          </div>
+        </Rule>
+
+        <Rule number={3} title="Round-Peso Amounts" field="flag_round" {...ruleProps}
+          hint="Flag round amounts at or above the clearly trivial threshold, which is about 5% of materiality.">
+          <div style={rowStyle}>
+            <span>Overall materiality: ₱</span>
+            <NumberInput field="materiality" width={160} {...ruleProps} />
+            <button type="button" onClick={applyFivePercent} style={{ padding: '6px 10px', cursor: 'pointer' }}>Use 5% as threshold</button>
+          </div>
+          <div style={rowStyle}>
+            <span>Flag amounts at or above: ₱</span>
+            <NumberInput field="round_min_amount" width={160} {...ruleProps} />
+          </div>
+          <div style={rowStyle}>
+            <span>&quot;Round&quot; means an exact multiple of: ₱</span>
+            <NumberInput field="round_multiple" width={120} {...ruleProps} />
+          </div>
+        </Rule>
+
+        <Rule number={4} title="Late-Period Adjustments" field="flag_late_period" {...ruleProps}
+          hint="Flag entries in the last days before and the first days after the period end. Entries keyed in after the period end but dated before it are marked post-closing (higher risk).">
+          <div style={rowStyle}>
+            <span>Period end (MM-DD):</span>
+            <input type="text" value={criteria.period_end || ''} onChange={(e) => updateField('period_end', e.target.value)} style={{ padding: 8, width: 80 }} placeholder="12-31" />
+          </div>
+          <div style={rowStyle}>
+            <NumberInput field="late_days_before" step="1" width={70} {...ruleProps} />
+            <span>days before and</span>
+            <NumberInput field="late_days_after" step="1" width={70} {...ruleProps} />
+            <span>days after (calendar days)</span>
+          </div>
+        </Rule>
+
+        <Rule number={5} title="Segregation of Duties" field="flag_sod" {...ruleProps}
+          hint="Flag entries posted by someone outside their assigned accounts. Needs a Prepared By column.">
+          <p style={{ ...hintStyle, marginTop: 0 }}>
+            Client&apos;s preparer list, one person per line, as <code>Name: allowed accounts or types</code>.
+            Example: <code>Ana Cruz: Expense, Liability</code>
+          </p>
+          <textarea
+            rows={4}
+            value={criteria.preparer_roster || ''}
+            onChange={(e) => updateField('preparer_roster', e.target.value)}
+            style={{ padding: 8, width: '100%', boxSizing: 'border-box', fontFamily: 'inherit' }}
+          />
+          <div style={rowStyle}>
+            <span>If the list is empty, flag preparers posting under</span>
+            <NumberInput field="sod_rare_pct" width={70} {...ruleProps} />
+            <span>% of entries</span>
+          </div>
+        </Rule>
+
+        <Rule number={6} title="Unusual Account Combinations" field="flag_unusual_accounts" {...ruleProps}
+          hint="Flag debit/credit account-type pairs that are always suspicious (like Debit Revenue / Credit Expense), or that this client rarely uses. Unbalanced entries are already rejected at upload.">
+          <div style={rowStyle}>
+            <span>Rare = used fewer than</span>
+            <NumberInput field="combo_min_count" step="1" width={70} {...ruleProps} />
+            <span>times, or in under</span>
+            <NumberInput field="combo_rare_pct" width={70} {...ruleProps} />
+            <span>% of journal entries</span>
+          </div>
+        </Rule>
+
+        <Rule number={7} title="Manual / Direct GL Entries" field="flag_direct_gl" {...ruleProps}
+          hint="Low priority. For Xero / QuickBooks clients only: flag entries whose Source column says they were keyed in by hand.">
+          <div style={rowStyle}>
+            <span>Source words that mean manual:</span>
+            <input type="text" value={criteria.manual_source_keywords || ''} onChange={(e) => updateField('manual_source_keywords', e.target.value)} style={{ padding: 8, flex: 1, minWidth: 200 }} />
+          </div>
+        </Rule>
 
         {savedMessage && (
           <p style={{ color: savedMessage.startsWith('Error') ? 'crimson' : '#2a7' }}>{savedMessage}</p>

@@ -6,8 +6,20 @@ import Link from 'next/link';
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
 import { createClient } from '../../../../lib/supabaseClient';
+import { groupJournalEntries } from '../../../../lib/jeTesting';
 
 const REQUIRED_COLUMNS = ['date', 'account', 'description', 'debit', 'credit'];
+
+// Optional columns the 7 JE rules use. Each field lists the header names
+// clients commonly use for it (after normalizeHeader). A rule whose column
+// is missing shows "Not applicable" on the Run page instead of failing.
+const OPTIONAL_COLUMNS = {
+  effective_date: ['effective_date', 'transaction_date', 'document_date', 'doc_date', 'gl_date'],
+  entered_by: ['prepared_by', 'preparer', 'entered_by', 'created_by', 'posted_by', 'user'],
+  je_number: ['je_no', 'je_number', 'journal_no', 'journal_number', 'entry_no', 'jv_no', 'voucher_no', 'reference', 'ref'],
+  source: ['source', 'transaction_type', 'source_type', 'type'],
+  account_class: ['account_type', 'account_class', 'class'],
+};
 
 // Extensions we actually know how to read.
 const SUPPORTED_EXTENSIONS = ['csv', 'xlsx', 'xls'];
@@ -25,18 +37,45 @@ const KNOWN_UNSUPPORTED = {
   zip: 'Zipped folders aren\'t supported. Please extract and upload the individual Excel or CSV file.',
 };
 
+// "JE No." -> "je_no", "Prepared By" -> "prepared_by"
 function normalizeHeader(h) {
-  return String(h).trim().toLowerCase().replace(/\s+/g, '_');
+  return String(h).trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
 }
 
 function getExtension(filename) {
   return filename.split('.').pop().toLowerCase();
 }
 
+// Turns a date cell into "YYYY-MM-DD", or null if it isn't a date.
+// Handles ISO text (2026-08-01), other text dates (8/1/2026), and Excel's
+// serial numbers (45870). Building the string ourselves avoids the +8
+// timezone moving a date back one day.
+function parseDateCell(value) {
+  const text = String(value ?? '').trim();
+  if (!text) return null;
+
+  if (/^\d{4}-\d{2}-\d{2}/.test(text)) return text.slice(0, 10);
+
+  if (/^\d+(\.\d+)?$/.test(text)) {
+    const ms = Date.UTC(1899, 11, 30) + Math.floor(Number(text)) * 86400000;
+    return new Date(ms).toISOString().slice(0, 10);
+  }
+
+  const parsed = new Date(text);
+  if (isNaN(parsed.getTime())) return null;
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${parsed.getFullYear()}-${pad(parsed.getMonth() + 1)}-${pad(parsed.getDate())}`;
+}
+
+function peso(n) {
+  return `₱${Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
 export default function UploadJEData({ params }) {
   const { id: engagementId } = params;
   const [fileName, setFileName] = useState('');
   const [parsedRows, setParsedRows] = useState([]);
+  const [foundOptional, setFoundOptional] = useState([]);
   const [validationErrors, setValidationErrors] = useState([]);
   const [status, setStatus] = useState('');
   const [saveMessage, setSaveMessage] = useState('');
@@ -50,6 +89,7 @@ export default function UploadJEData({ params }) {
     setFileName(file.name);
     setValidationErrors([]);
     setParsedRows([]);
+    setFoundOptional([]);
     setSaveMessage('');
 
     const ext = getExtension(file.name);
@@ -128,27 +168,27 @@ export default function UploadJEData({ params }) {
     const headerMap = {};
     rawHeaders.forEach((h) => { headerMap[normalizeHeader(h)] = h; });
 
+    // For each optional field, find the first header name the file uses.
+    const optionalMap = {};
+    Object.entries(OPTIONAL_COLUMNS).forEach(([field, names]) => {
+      const found = names.find((n) => headerMap[n] !== undefined);
+      if (found) optionalMap[field] = headerMap[found];
+    });
+
     const rowErrors = [];
     const cleanRows = [];
 
     dataRows.forEach((row, index) => {
       const rowNum = index + 2;
-      const dateVal = String(row[headerMap['date']] ?? '').trim();
-      const accountVal = String(row[headerMap['account']] ?? '').trim();
-      const descVal = String(row[headerMap['description']] ?? '').trim();
-      const debitVal = String(row[headerMap['debit']] ?? '').trim();
-      const creditVal = String(row[headerMap['credit']] ?? '').trim();
+      const cell = (header) => String(row[header] ?? '').trim();
+      const dateVal = cell(headerMap['date']);
+      const accountVal = cell(headerMap['account']);
+      const descVal = cell(headerMap['description']);
+      const debitVal = cell(headerMap['debit']).replace(/,/g, '');
+      const creditVal = cell(headerMap['credit']).replace(/,/g, '');
 
-      // Excel sometimes stores dates as serial numbers instead of text.
-      // sheet_to_json usually converts date-formatted cells automatically,
-      // but this guards against raw numbers slipping through.
-      let parsedDate = Date.parse(dateVal);
-      if (isNaN(parsedDate) && !isNaN(Number(dateVal)) && dateVal !== '') {
-        const excelEpoch = new Date(1899, 11, 30);
-        parsedDate = excelEpoch.getTime() + Number(dateVal) * 86400000;
-      }
-
-      if (!dateVal || isNaN(parsedDate)) {
+      const entryDate = parseDateCell(dateVal);
+      if (!entryDate) {
         rowErrors.push(`Row ${rowNum}: invalid or missing date ("${dateVal}")`);
         return;
       }
@@ -167,13 +207,28 @@ export default function UploadJEData({ params }) {
         return;
       }
 
+      let effectiveDate = null;
+      if (optionalMap.effective_date && cell(optionalMap.effective_date)) {
+        effectiveDate = parseDateCell(cell(optionalMap.effective_date));
+        if (!effectiveDate) {
+          rowErrors.push(`Row ${rowNum}: invalid effective date ("${cell(optionalMap.effective_date)}")`);
+          return;
+        }
+      }
+
       cleanRows.push({
         engagement_id: engagementId,
-        entry_date: new Date(parsedDate).toISOString().slice(0, 10),
+        line_no: index + 1,
+        entry_date: entryDate,
+        effective_date: effectiveDate,
         account: accountVal,
         description: descVal,
         debit,
         credit,
+        entered_by: optionalMap.entered_by ? cell(optionalMap.entered_by) || null : null,
+        je_number: optionalMap.je_number ? cell(optionalMap.je_number) || null : null,
+        source: optionalMap.source ? cell(optionalMap.source) || null : null,
+        account_class: optionalMap.account_class ? cell(optionalMap.account_class) || null : null,
       });
     });
 
@@ -185,10 +240,29 @@ export default function UploadJEData({ params }) {
       return;
     }
 
+    // Rule 6 integrity check: every journal entry must balance (debits = credits).
+    // This is a data error, not a risk flag, so nothing is saved if it fails.
+    const balanceErrors = [];
+    const hasJeNumbers = cleanRows.every((r) => r.je_number);
+    groupJournalEntries(cleanRows).forEach((lines) => {
+      const diff = lines.reduce((sum, l) => sum + Math.round((l.debit - l.credit) * 100), 0) / 100;
+      if (diff !== 0) {
+        balanceErrors.push(hasJeNumbers
+          ? `JE ${lines[0].je_number}: debits and credits differ by ${peso(Math.abs(diff))}.`
+          : `Rows ${lines[0].line_no + 1} to ${lines[lines.length - 1].line_no + 1}: debits and credits differ by ${peso(Math.abs(diff))}.`);
+      }
+    });
+    if (balanceErrors.length > 0) {
+      setValidationErrors(['Some journal entries don\'t balance:'].concat(balanceErrors.slice(0, 20)));
+      setStatus('error');
+      return;
+    }
+
     if (sheetCount > 1) {
       setSaveMessage(`Note: this file has ${sheetCount} sheets — only the first sheet was read.`);
     }
 
+    setFoundOptional(Object.keys(optionalMap));
     setParsedRows(cleanRows);
     setStatus('ready');
   }
@@ -213,6 +287,14 @@ export default function UploadJEData({ params }) {
     }
   }
 
+  const OPTIONAL_LABELS = {
+    effective_date: 'Effective Date (rule 2)',
+    entered_by: 'Prepared By (rule 5)',
+    je_number: 'JE No. (rule 6)',
+    source: 'Source (rule 7)',
+    account_class: 'Account Type (rules 5 and 6)',
+  };
+
   return (
     <div style={{ maxWidth: 700, margin: '40px auto', padding: 24 }}>
       <Link href={`/engagements/${engagementId}`} style={{ display: 'inline-block', marginBottom: 16 }}>
@@ -221,6 +303,10 @@ export default function UploadJEData({ params }) {
       <h1>Upload JE Data</h1>
       <p style={{ color: '#666' }}>
         Upload a CSV or Excel file of journal entries. Required columns: <strong>Date, Account, Description, Debit, Credit</strong>.
+        &quot;Date&quot; is the date the entry was keyed in.
+      </p>
+      <p style={{ color: '#666', fontSize: 14 }}>
+        Optional columns used by the testing rules: <strong>Effective Date, Prepared By, JE No., Source, Account Type</strong>.
       </p>
 
       <div style={{ background: 'white', padding: 20, borderRadius: 8, marginBottom: 16 }}>
@@ -242,8 +328,11 @@ export default function UploadJEData({ params }) {
       {status === 'ready' && (
         <div style={{ background: '#eaf6ea', border: '1px solid #8c8', padding: 16, borderRadius: 8, marginBottom: 16 }}>
           {saveMessage && <p style={{ color: '#a70', margin: '0 0 8px' }}>{saveMessage}</p>}
-          <p style={{ margin: 0, marginBottom: 12 }}>
-            <strong>{parsedRows.length} rows</strong> passed validation and are ready to save.
+          <p style={{ margin: 0, marginBottom: 8 }}>
+            <strong>{parsedRows.length} rows</strong> passed validation, and every journal entry balances.
+          </p>
+          <p style={{ margin: 0, marginBottom: 12, fontSize: 14, color: '#555' }}>
+            Optional columns found: {foundOptional.length > 0 ? foundOptional.map((f) => OPTIONAL_LABELS[f]).join(', ') : 'none'}
           </p>
           <button
             onClick={handleConfirmSave}

@@ -4,13 +4,21 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '../../../../lib/supabaseClient';
-import { runJETests, RULE_LABELS } from '../../../../lib/jeTesting';
+import { runJETests, getRuleStatus, RULE_LABELS, DEFAULT_CRITERIA } from '../../../../lib/jeTesting';
+
+const STATUS_STYLE = {
+  on: { label: 'Ran', color: '#2a7' },
+  off: { label: 'Off', color: '#888' },
+  na: { label: 'Not applicable', color: '#a70' },
+};
 
 export default function RunJETesting({ params }) {
   const { id: engagementId } = params;
   const [entries, setEntries] = useState([]);
   const [criteria, setCriteria] = useState(null);
+  const [holidays, setHolidays] = useState({});
   const [results, setResults] = useState(null); // entries with .flags attached
+  const [ruleStatus, setRuleStatus] = useState([]);
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
   const [saveMessage, setSaveMessage] = useState('');
@@ -28,7 +36,9 @@ export default function RunJETesting({ params }) {
       const { data: entryData } = await supabase
         .from('journal_entries')
         .select('*')
-        .eq('engagement_id', engagementId);
+        .eq('engagement_id', engagementId)
+        .order('created_at', { ascending: true })
+        .order('line_no', { ascending: true });
 
       const { data: criteriaData } = await supabase
         .from('testing_criteria')
@@ -36,17 +46,23 @@ export default function RunJETesting({ params }) {
         .eq('engagement_id', engagementId)
         .single();
 
+      const { data: holidayData } = await supabase
+        .from('holidays')
+        .select('holiday_date, name');
+
       setEntries(entryData || []);
-      // Fall back to sensible defaults if criteria were never configured,
+      // Fall back to the default settings for anything never configured,
       // so "Run JE Testing" still works instead of blocking the user.
-      setCriteria(criteriaData || {
-        round_dollar_threshold: 1000,
-        off_hours_start: '19:00',
-        off_hours_end: '06:00',
-        late_period_days: 5,
-        flag_direct_gl: true,
-        flag_unusual_accounts: true,
-      });
+      const merged = { ...DEFAULT_CRITERIA };
+      if (criteriaData) {
+        Object.keys(DEFAULT_CRITERIA).forEach((key) => {
+          if (criteriaData[key] !== null && criteriaData[key] !== undefined) merged[key] = criteriaData[key];
+        });
+      }
+      setCriteria(merged);
+      const holidayMap = {};
+      (holidayData || []).forEach((h) => { holidayMap[h.holiday_date] = h.name; });
+      setHolidays(holidayMap);
       setLoading(false);
     }
     load();
@@ -58,8 +74,8 @@ export default function RunJETesting({ params }) {
     // Small artificial delay so the UI shows "Running..." even on tiny
     // datasets — on real files this will just reflect actual compute time.
     setTimeout(() => {
-      const tested = runJETests(entries, criteria);
-      setResults(tested);
+      setRuleStatus(getRuleStatus(entries, criteria));
+      setResults(runJETests(entries, criteria, holidays));
       setRunning(false);
     }, 300);
   }
@@ -109,7 +125,14 @@ export default function RunJETesting({ params }) {
 
   if (loading) return <p style={{ padding: 24 }}>Loading...</p>;
 
-  const flaggedCount = results ? results.filter((r) => r.flags.length > 0).length : 0;
+  const flagged = results ? results.filter((r) => r.flags.length > 0) : [];
+  const countByRule = {};
+  flagged.forEach((r) => r.flags.forEach((f) => { countByRule[f.rule] = (countByRule[f.rule] || 0) + 1; }));
+  // Riskiest first: entries hitting the most rules, post-closing entries on top.
+  const sortedFlagged = [...flagged].sort((a, b) => {
+    const score = (r) => r.flags.length + (r.flags.some((f) => f.reason.startsWith('Post-closing')) ? 1 : 0);
+    return score(b) - score(a);
+  });
 
   return (
     <div style={{ maxWidth: 800, margin: '40px auto', padding: 24 }}>
@@ -118,7 +141,7 @@ export default function RunJETesting({ params }) {
       </Link>
       <h1>Run JE Testing</h1>
       <p style={{ color: '#666' }}>
-        {entries.length} journal entries loaded for this engagement.
+        {entries.length} journal entry lines loaded for this engagement.
       </p>
 
       {entries.length === 0 && (
@@ -142,7 +165,7 @@ export default function RunJETesting({ params }) {
           <div style={{ background: 'white', padding: 20, borderRadius: 8, marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
               <p style={{ margin: 0, fontSize: 18 }}>
-                <strong>{flaggedCount}</strong> of <strong>{results.length}</strong> entries flagged
+                <strong>{flagged.length}</strong> of <strong>{results.length}</strong> entries flagged
               </p>
               {saveMessage && <p style={{ margin: '8px 0 0', color: saveMessage.startsWith('Error') ? 'crimson' : '#2a7' }}>{saveMessage}</p>}
             </div>
@@ -157,19 +180,39 @@ export default function RunJETesting({ params }) {
             </div>
           </div>
 
-          {flaggedCount === 0 ? (
+          <div style={{ background: 'white', padding: 16, borderRadius: 8, marginBottom: 16 }}>
+            <strong>Rules</strong>
+            <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: 8, fontSize: 14 }}>
+              <tbody>
+                {ruleStatus.map((s, i) => (
+                  <tr key={s.rule} style={{ borderTop: '1px solid #eee' }}>
+                    <td style={{ padding: '6px 4px', whiteSpace: 'nowrap' }}>{i + 1}. {RULE_LABELS[s.rule]}</td>
+                    <td style={{ padding: '6px 4px', color: STATUS_STYLE[s.status].color, whiteSpace: 'nowrap' }}>{STATUS_STYLE[s.status].label}</td>
+                    <td style={{ padding: '6px 4px', textAlign: 'right' }}>{s.status === 'on' ? `${countByRule[s.rule] || 0} flagged` : ''}</td>
+                    <td style={{ padding: '6px 4px', color: '#666' }}>{s.status === 'on' && !s.note ? '' : s.note}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {flagged.length === 0 ? (
             <p style={{ color: '#666' }}>No entries were flagged under the current testing criteria.</p>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {results.filter((r) => r.flags.length > 0).map((entry) => (
+              {sortedFlagged.map((entry) => (
                 <div key={entry.id} style={{ background: 'white', padding: 16, borderRadius: 8, borderLeft: '4px solid crimson' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <strong>{entry.account}</strong>
+                    <strong>{entry.je_number ? `JE ${entry.je_number} · ` : ''}{entry.account}</strong>
                     <span>
-                      {entry.debit > 0 ? `Dr ₱${entry.debit.toLocaleString()}` : `Cr ₱${entry.credit.toLocaleString()}`}
+                      {entry.debit > 0 ? `Dr ₱${Number(entry.debit).toLocaleString()}` : `Cr ₱${Number(entry.credit).toLocaleString()}`}
                     </span>
                   </div>
-                  <p style={{ margin: '4px 0', color: '#666' }}>{entry.description} — {entry.entry_date}</p>
+                  <p style={{ margin: '4px 0', color: '#666' }}>
+                    {entry.description} — entered {entry.entry_date}
+                    {entry.effective_date ? `, effective ${entry.effective_date}` : ''}
+                    {entry.entered_by ? `, by ${entry.entered_by}` : ''}
+                  </p>
                   <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
                     {entry.flags.map((f, i) => (
                       <div key={i} style={{ fontSize: 13 }}>
