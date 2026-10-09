@@ -1,65 +1,64 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '../../lib/supabaseClient';
+import { useProfile } from '../../components/AppShell';
+import { teamOf, isLeadership, isAuditTeam, SIGNOFF_LEVELS } from '../../lib/roles';
 
 export default function Dashboard() {
-  const [profile, setProfile] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const router = useRouter();
+  const { profile } = useProfile();
+  const [counts, setCounts] = useState({ engagements: 0, waiting: 0 });
   const supabase = createClient();
 
   useEffect(() => {
-    async function loadUser() {
-      const { data: { user } } = await supabase.auth.getUser();
+    if (!profile) return;
+    async function load() {
+      const { count: engagements } = await supabase.from('engagements').select('*', { count: 'exact', head: true });
 
-      if (!user) {
-        router.push('/login');
-        return;
+      // Reports sitting at a sign-off level this person can act on.
+      const myStatuses = SIGNOFF_LEVELS.filter((s) => s.canAct(profile.role)).map((s) => s.status);
+      let waiting = 0;
+      if (myStatuses.length > 0) {
+        const { count } = await supabase.from('reports').select('*', { count: 'exact', head: true }).in('status', myStatuses);
+        waiting = count || 0;
       }
-
-      // Fetch this user's role from the "profiles" table
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('full_name, role')
-        .eq('id', user.id)
-        .single();
-
-      if (!error) setProfile({ email: user.email, ...data });
-      setLoading(false);
+      setCounts({ engagements: engagements || 0, waiting });
     }
-    loadUser();
-  }, []);
+    load();
+  }, [profile]);
 
-  async function handleLogout() {
-    await supabase.auth.signOut();
-    router.push('/login');
-  }
+  if (!profile) return null;
 
-  if (loading) return <p style={{ padding: 24 }}>Loading...</p>;
+  const card = { background: 'white', padding: 20, borderRadius: 8, textDecoration: 'none', color: 'inherit', display: 'block' };
 
   return (
-    <div style={{ maxWidth: 700, margin: '40px auto', padding: 24 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-        <h1>ODYSSEY Dashboard</h1>
-        <button onClick={handleLogout} style={{ padding: '8px 16px', cursor: 'pointer' }}>
-          Log out
-        </button>
+    <div style={{ maxWidth: 800, margin: '40px auto', padding: 24 }}>
+      <h1 style={{ marginBottom: 4 }}>Welcome, {profile.full_name || profile.email}</h1>
+      <p style={{ color: '#666', marginTop: 0 }}>{profile.role} · {teamOf(profile.role)}</p>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16, marginTop: 24 }}>
+        <Link href="/engagements" style={card}>
+          <div style={{ fontSize: 32, fontWeight: 'bold' }}>{counts.engagements}</div>
+          <div style={{ color: '#666' }}>Engagements</div>
+        </Link>
+        <Link href="/reports?waiting=1" style={card}>
+          <div style={{ fontSize: 32, fontWeight: 'bold', color: counts.waiting > 0 ? '#c60' : 'inherit' }}>{counts.waiting}</div>
+          <div style={{ color: '#666' }}>Reports waiting for you</div>
+        </Link>
+        {isLeadership(profile.role) && (
+          <Link href="/admin/users" style={card}>
+            <div style={{ fontSize: 20, fontWeight: 'bold' }}>Manage Users</div>
+            <div style={{ color: '#666' }}>Create accounts and set roles</div>
+          </Link>
+        )}
       </div>
 
-      <div style={{ background: 'white', padding: 16, borderRadius: 8, marginBottom: 24 }}>
-        <p><strong>Name:</strong> {profile?.full_name || '(not set)'}</p>
-        <p><strong>Email:</strong> {profile?.email}</p>
-        <p><strong>Role:</strong> {profile?.role}</p>
-      </div>
-
-      <Link href="/engagements">
-        <button style={{ padding: '10px 20px', background: '#111', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer' }}>
-          View / Create Audit Engagements &rarr;
-        </button>
-      </Link>
+      <p style={{ color: '#666', marginTop: 24 }}>
+        {isAuditTeam(profile.role)
+          ? 'Open an engagement to upload JE data, set the testing criteria and run JE testing.'
+          : 'Open an engagement to see its testing history and reports.'}
+      </p>
     </div>
   );
 }

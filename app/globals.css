@@ -1,0 +1,21 @@
+/* ODYSSEY base styles. Kept basic on purpose: the frontend redesign comes next. */
+
+body {
+  font-family: system-ui, sans-serif;
+  margin: 0;
+  background: #f5f5f5;
+  color: #111;
+}
+
+/* Dark mode, temporary version: most pages still use inline colors
+   (white cards, grey text), so dark mode flips the whole page's colors.
+   The sidebar is flipped back so it stays dark. Replace this with real
+   dark colors during the frontend redesign. */
+:root[data-theme="dark"] {
+  filter: invert(0.9) hue-rotate(180deg);
+  background: #f5f5f5;
+}
+:root[data-theme="dark"] nav,
+:root[data-theme="dark"] img {
+  filter: invert(1) hue-rotate(180deg);
+}
