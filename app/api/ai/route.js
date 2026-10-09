@@ -9,11 +9,12 @@
 //   explain_flags      one-line reason, risk level and draft comment per flag
 //   draft_adjustment   draft the correcting entry for a flag marked Error (UC-14)
 //   draft_findings     draft the JE testing findings section of a report (UC-15)
+//   analytics_note     point out what stands out on an Analytics page
 
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import Anthropic from '@anthropic-ai/sdk';
-import { isAuditTeam, canPrepareReports } from '../../../lib/roles';
+import { isAuditTeam, isLeadership, canPrepareReports } from '../../../lib/roles';
 import { RULE_LABELS } from '../../../lib/jeTesting';
 
 export const dynamic = 'force-dynamic';
@@ -271,6 +272,23 @@ Facts: ${JSON.stringify(facts)}`;
   return { text: result.text };
 }
 
+// ---- 6. Analytics note ------------------------------------------------
+// Gets only the page's totals (already worked out in the browser), never the file.
+async function analyticsNote(anthropic, body) {
+  const summary = JSON.stringify(body.summary || {}).slice(0, 12000);
+  const schema = {
+    type: 'object',
+    properties: { notes: { type: 'array', items: { type: 'string' } } },
+    required: ['notes'],
+    additionalProperties: false,
+  };
+  const prompt = `This is the "${clip(body.page_title, 60)}" page of the journal entry analytics dashboard for one engagement. Point out what stands out for an auditor, in 2 or 3 short notes (one sentence each, with the specific numbers, for example "62% of December's amount was posted on the 31st, mostly by one person."). If nothing stands out, say so in one note. Only use the numbers given; don't guess causes.
+
+Page data: ${summary}`;
+  const result = await askClaude(anthropic, prompt, schema, 'low');
+  return { notes: (result.notes || []).slice(0, 3) };
+}
+
 export async function POST(request) {
   if (!process.env.ANTHROPIC_API_KEY) {
     return fail('AI is not set up on this server (ANTHROPIC_API_KEY is missing). You can carry on without it.', 503);
@@ -294,6 +312,7 @@ export async function POST(request) {
   const auditOnly = ['map_columns', 'classify_accounts', 'explain_flags', 'draft_adjustment'];
   if (auditOnly.includes(body.action) && !isAuditTeam(me.role)) return fail('Only the Audit Team can use this.', 403);
   if (body.action === 'draft_findings' && !canPrepareReports(me.role)) return fail('Only report preparers can use this.', 403);
+  if (body.action === 'analytics_note' && !isAuditTeam(me.role) && !isLeadership(me.role)) return fail('Only the Audit Team and Firm Leadership can use this.', 403);
 
   // 3. Ask Claude. If anything goes wrong, say so; the page keeps working without AI.
   const anthropic = new Anthropic(); // reads ANTHROPIC_API_KEY
@@ -303,6 +322,7 @@ export async function POST(request) {
     if (body.action === 'explain_flags') return NextResponse.json(await explainFlags(anthropic, body));
     if (body.action === 'draft_adjustment') return NextResponse.json(await draftAdjustment(anthropic, body));
     if (body.action === 'draft_findings') return NextResponse.json(await draftFindings(anthropic, db, body));
+    if (body.action === 'analytics_note') return NextResponse.json(await analyticsNote(anthropic, body));
     return fail('Unknown action.');
   } catch (err) {
     if (err instanceof UserError) return fail(err.message);

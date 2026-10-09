@@ -52,6 +52,7 @@ export default function EngagementDetail({ params }) {
     auditTeam && { href: `/engagements/${id}/criteria`, title: 'Configure Testing Criteria', text: 'Set the parameters for the 7 JE testing rules' },
     auditTeam && { href: `/engagements/${id}/testing`, title: 'Run JE Testing', text: 'Run the 7 rules against every uploaded entry' },
     (auditTeam || isLeadership(profile.role)) && { href: `/engagements/${id}/history`, title: 'Testing History & Audit Trail', text: 'Review past runs, who ran them, and what was flagged' },
+    (auditTeam || isLeadership(profile.role)) && { href: `/engagements/${id}/analytics`, title: 'Analytics', text: 'Dashboard of the entries: trends, weekends, posting lag, duplicates and more' },
     { href: `/reports?engagement=${id}`, title: 'Reports & Sign-off', text: 'Prepare reports and follow their sign-off' },
   ].filter(Boolean);
 

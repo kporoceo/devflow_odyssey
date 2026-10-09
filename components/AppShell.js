@@ -39,9 +39,9 @@ function redirectFor(profile, path) {
   if (!isFirmStaff(profile.role)) return '/account';
 
   if (path.startsWith('/admin') && !isLeadership(profile.role)) return '/dashboard';
-  // JE testing pages: Audit Team only. Testing history: Audit Team and Firm Leadership.
+  // JE testing pages: Audit Team only. Testing history and Analytics: Audit Team and Firm Leadership.
   if (/^\/engagements\/[^/]+\/(upload|criteria|testing)/.test(path) && !isAuditTeam(profile.role)) return '/dashboard';
-  if (/^\/engagements\/[^/]+\/history/.test(path) && !isAuditTeam(profile.role) && !isLeadership(profile.role)) return '/dashboard';
+  if (/^\/engagements\/[^/]+\/(history|analytics)/.test(path) && !isAuditTeam(profile.role) && !isLeadership(profile.role)) return '/dashboard';
   return null;
 }
 
