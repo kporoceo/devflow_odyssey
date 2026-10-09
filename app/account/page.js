@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { createClient } from '../../lib/supabaseClient';
 import { useProfile, Avatar } from '../../components/AppShell';
-import { teamOf, homeFor, isClient } from '../../lib/roles';
+import { teamOf, homeFor, homeLabel } from '../../lib/roles';
 import { BackLink, Spinner } from '../../components/ui';
 
 const PICTURE_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
@@ -89,7 +89,7 @@ export default function MyAccount() {
 
   return (
     <div style={{ maxWidth: 600, margin: '40px auto', padding: 24 }}>
-      <BackLink href={homeFor(profile.role)}>Back to {isClient(profile.role) ? 'My Reports' : 'Dashboard'}</BackLink>
+      <BackLink href={homeFor(profile.role)}>Back to {homeLabel(profile.role)}</BackLink>
       <h1>My Account</h1>
 
       <div style={{ background: 'white', padding: 20, borderRadius: 8, marginBottom: 16, display: 'flex', gap: 16, alignItems: 'center' }}>
@@ -113,7 +113,7 @@ export default function MyAccount() {
         <div style={row}><span style={label}>Role</span><span>{profile.role}</span></div>
         <div style={row}><span style={label}>Team</span><span>{teamOf(profile.role)}</span></div>
         {engagementName && <div style={row}><span style={label}>Engagement</span><span>{engagementName}</span></div>}
-        <p style={{ color: '#666', fontSize: 13, marginBottom: 0 }}>Your email and role can only be changed by Firm Leadership.</p>
+        <p style={{ color: '#666', fontSize: 13, marginBottom: 0 }}>Your email and role can only be changed by the System Administrator.</p>
       </div>
 
       <form onSubmit={handleSave} style={{ background: 'white', padding: 20, borderRadius: 8, marginBottom: 16 }}>

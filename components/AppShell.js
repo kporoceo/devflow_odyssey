@@ -11,7 +11,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '../lib/supabaseClient';
 import { Spinner } from './ui';
-import { isLeadership, isAuditTeam, isClient, isFirmStaff, teamOf, homeFor } from '../lib/roles';
+import { isLeadership, isAuditTeam, isClient, isFirmStaff, isSystemAdmin, teamOf, homeFor } from '../lib/roles';
 
 const ProfileContext = createContext({ profile: null, refreshProfile: async () => {} });
 
@@ -35,6 +35,7 @@ export function Avatar({ profile, size = 36 }) {
 
 const PUBLIC_PATHS = ['/login'];
 const CLIENT_PATHS = ['/reports', '/account', '/settings', '/change-password'];
+const ADMIN_PATHS = ['/admin', '/account', '/settings', '/change-password'];
 
 export function applyTheme(theme) {
   const dark = theme === 'dark'
@@ -51,9 +52,13 @@ function redirectFor(profile, path) {
   if (isClient(profile.role)) {
     return CLIENT_PATHS.some((p) => path.startsWith(p)) ? null : '/reports';
   }
+  // System Administrator: account management only, no audit pages.
+  if (isSystemAdmin(profile.role)) {
+    return ADMIN_PATHS.some((p) => path.startsWith(p)) ? null : '/admin/users';
+  }
   if (!isFirmStaff(profile.role)) return '/account';
 
-  if (path.startsWith('/admin') && !isLeadership(profile.role)) return '/dashboard';
+  if (path.startsWith('/admin')) return '/dashboard';
   // JE testing pages: Audit Team only. Testing history, Analytics and the JE detail page: Audit Team and Firm Leadership.
   if (/^\/engagements\/[^/]+\/(upload|criteria|testing)/.test(path) && !isAuditTeam(profile.role)) return '/dashboard';
   if (/^\/engagements\/[^/]+\/(history|analytics|entries)/.test(path) && !isAuditTeam(profile.role) && !isLeadership(profile.role)) return '/dashboard';
@@ -68,12 +73,18 @@ function navItems(role) {
       { href: '/settings', label: 'Settings' },
     ];
   }
+  if (isSystemAdmin(role)) {
+    return [
+      { href: '/admin/users', label: 'Manage Users' },
+      { href: '/account', label: 'My Account' },
+      { href: '/settings', label: 'Settings' },
+    ];
+  }
   const items = [
     { href: '/dashboard', label: 'Dashboard' },
     { href: '/engagements', label: 'Engagements' },
     { href: '/reports', label: 'Reports' },
   ];
-  if (isLeadership(role)) items.push({ href: '/admin/users', label: 'Manage Users' });
   items.push({ href: '/account', label: 'My Account' }, { href: '/settings', label: 'Settings' });
   return items;
 }

@@ -275,12 +275,6 @@ export default function Dashboard() {
             ))}
           </Panel>
 
-          {isLeadership(profile.role) && (
-            <Link href="/admin/users" style={{ ...card, maxWidth: 320 }}>
-              <div style={{ fontSize: 18, fontWeight: 'bold' }}>Manage Users</div>
-              <div style={{ color: '#666' }}>Create accounts and set roles</div>
-            </Link>
-          )}
         </>
       )}
     </div>

@@ -5,7 +5,7 @@ import { createClient } from '../../lib/supabaseClient';
 import { useProfile } from '../../components/AppShell';
 import { PasswordInput, Spinner } from '../../components/ui';
 
-// No sign-up here on purpose: Firm Leadership creates every account in
+// No sign-up here on purpose: the System Administrator creates every account in
 // Manage Users and gives the person a default password.
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -23,7 +23,7 @@ export default function LoginPage() {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) {
       setError(error.message === 'User is banned'
-        ? 'This account has been deactivated. Please contact Firm Leadership.'
+        ? 'This account has been deactivated. Please contact the System Administrator.'
         : error.message);
       setLoading(false);
       return;
@@ -32,7 +32,7 @@ export default function LoginPage() {
     // password change screen on first login, otherwise to their home page.
     const profile = await refreshProfile();
     if (!profile) {
-      setError('This account has no access. Please contact Firm Leadership.');
+      setError('This account has no access. Please contact the System Administrator.');
       setLoading(false);
     }
   }
@@ -71,7 +71,7 @@ export default function LoginPage() {
       </form>
 
       <p style={{ marginTop: 16, color: '#666', fontSize: 14 }}>
-        No account yet? Accounts are created by the firm&apos;s Managing Partner or a Partner.
+        No account yet? Accounts are created by the firm&apos;s System Administrator.
       </p>
     </div>
   );

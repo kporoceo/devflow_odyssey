@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { createClient } from '../../../lib/supabaseClient';
 import { useProfile } from '../../../components/AppShell';
 import { ALL_ROLES, CLIENT_ROLE, teamOf } from '../../../lib/roles';
-import { BackLink, BusyLabel } from '../../../components/ui';
+import { BusyLabel } from '../../../components/ui';
 
 const EMPTY_FORM = { full_name: '', email: '', role: 'Audit Associate', client_engagement_id: '' };
 
@@ -19,22 +19,27 @@ export default function ManageUsers() {
   const [busy, setBusy] = useState(false);
   const supabase = createClient();
 
+  // The list comes from the server route, because the System Administrator
+  // can't read engagements directly (they have no access to audit data).
   async function load() {
-    const { data: userRows } = await supabase
-      .from('profiles')
-      .select('id, full_name, email, role, is_active, must_change_password, client_engagement_id, created_at')
-      .order('created_at', { ascending: true });
-    const { data: engRows } = await supabase
-      .from('engagements')
-      .select('id, client_name, engagement_name')
-      .order('client_name');
-    setUsers(userRows || []);
-    setEngagements(engRows || []);
+    const { data: { session } } = await supabase.auth.getSession();
+    const res = await fetch('/api/admin/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
+      body: JSON.stringify({ action: 'list' }),
+    });
+    const result = await res.json();
+    if (!res.ok) {
+      setError(result.error || 'Could not load the accounts.');
+      return;
+    }
+    setUsers(result.users);
+    setEngagements(result.engagements);
   }
 
   useEffect(() => { load(); }, []);
 
-  // Calls the server route, sending this session's token so it can check we're Firm Leadership.
+  // Calls the server route, sending this session's token so it can check we're the System Administrator.
   async function callApi(payload) {
     setBusy(true);
     setError('');
@@ -95,9 +100,8 @@ export default function ManageUsers() {
 
   return (
     <div style={{ maxWidth: 960, margin: '40px auto', padding: 24 }}>
-      <BackLink href="/dashboard">Back to Dashboard</BackLink>
       <h1>Manage Users</h1>
-      <p style={{ color: '#666' }}>Only Firm Leadership can create accounts. Each new account gets a default password, which the person must change at first login.</p>
+      <p style={{ color: '#666' }}>Only the System Administrator creates accounts. Each new account gets a default password, which the person must change at first login. The System Administrator can&apos;t open engagements, journal entries or reports.</p>
 
       <form onSubmit={handleCreate} style={{ background: 'white', padding: 20, borderRadius: 8, marginBottom: 16 }}>
         <h3 style={{ marginTop: 0 }}>Create account</h3>

@@ -1,11 +1,13 @@
-// Server-side account management for Firm Leadership (Manage Users screen).
-// Creating accounts and changing passwords needs Supabase's service role
-// key, which must never reach the browser, so this runs on the server only.
+// Server-side account management for the System Administrator (Manage Users
+// screen). Creating accounts and changing passwords needs Supabase's service
+// role key, which must never reach the browser, so this runs on the server only.
+// The System Administrator has no access to audit data in the database; this
+// route gives them only what the Manage Users screen needs.
 
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { randomInt } from 'crypto';
-import { ALL_ROLES, CLIENT_ROLE, LEADERSHIP } from '../../../../lib/roles';
+import { ALL_ROLES, CLIENT_ROLE, SYSTEM_ADMIN } from '../../../../lib/roles';
 
 export const dynamic = 'force-dynamic';
 
@@ -29,17 +31,30 @@ export async function POST(request) {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
-  // 1. Who is calling? Only an active Managing Partner or Partner may continue.
+  // 1. Who is calling? Only an active System Administrator may continue.
   const token = (request.headers.get('authorization') || '').replace('Bearer ', '');
   const { data: { user }, error: userError } = await admin.auth.getUser(token);
   if (userError || !user) return fail('Please log in again.', 401);
 
   const { data: caller } = await admin.from('profiles').select('role, is_active').eq('id', user.id).single();
-  if (!caller || !caller.is_active || !LEADERSHIP.includes(caller.role)) {
-    return fail('Only Firm Leadership can manage user accounts.', 403);
+  if (!caller || !caller.is_active || caller.role !== SYSTEM_ADMIN) {
+    return fail('Only the System Administrator can manage user accounts.', 403);
   }
 
   const body = await request.json();
+
+  // The list of accounts, plus engagement names so a client account can be
+  // linked to its engagement. Nothing else about the engagements is sent.
+  if (body.action === 'list') {
+    const { data: users, error } = await admin.from('profiles')
+      .select('id, full_name, email, role, is_active, must_change_password, client_engagement_id, created_at')
+      .order('created_at', { ascending: true });
+    if (error) return fail(error.message);
+    const { data: engagements } = await admin.from('engagements')
+      .select('id, client_name, engagement_name')
+      .order('client_name');
+    return NextResponse.json({ users: users || [], engagements: engagements || [] });
+  }
 
   // 2. Create an account with a default password, shown once to the creator.
   if (body.action === 'create') {
@@ -77,7 +92,7 @@ export async function POST(request) {
 
   // 3. Change someone's role (and, for clients, their engagement).
   if (body.action === 'update') {
-    if (userId === user.id) return fail('You can\'t change your own role. Ask another partner.');
+    if (userId === user.id) return fail('You can\'t change your own role. Ask another System Administrator.');
     if (!ALL_ROLES.includes(body.role)) return fail('Choose a role.');
     if (body.role === CLIENT_ROLE && !body.client_engagement_id) return fail('Choose the client\'s engagement.');
     const { error } = await admin.from('profiles').update({

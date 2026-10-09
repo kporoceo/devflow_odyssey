@@ -1,4 +1,4 @@
--- ODYSSEY finals, Part H: profile pictures and engagement status.
+-- ODYSSEY finals: profile pictures, engagement status and the System Administrator.
 -- Run once in Supabase > SQL Editor, after the earlier finals files.
 -- Safe to run again.
 
@@ -90,3 +90,18 @@ revoke execute on function public.set_engagement_status(uuid, text) from public,
 revoke execute on function public.delete_engagement(uuid) from public, anon;
 grant execute on function public.set_engagement_status(uuid, text) to authenticated;
 grant execute on function public.delete_engagement(uuid) to authenticated;
+
+-- 3. SYSTEM ADMINISTRATOR -----------------------------------------------
+-- A separate role that manages user accounts and nothing else. It isn't in
+-- is_firm_staff(), so every existing access rule already keeps it away from
+-- engagements, journal entries, test results, reports and sign-off. The
+-- Manage Users screen works through the server route, which checks for this role.
+alter table profiles drop constraint if exists profiles_role_check;
+alter table profiles add constraint profiles_role_check check (role in (
+  'Managing Partner', 'Partner',
+  'Audit and Assurance Lead', 'Audit Associate',
+  'Supervisor', 'Accounting Assistant',
+  'Legal Consultant', 'Liaison Officer',
+  'Client Representative',
+  'System Administrator'
+));
