@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '../../../../lib/supabaseClient';
 import { DEFAULT_CRITERIA } from '../../../../lib/jeTesting';
+import { BackLink, BusyLabel, Spinner } from '../../../../components/ui';
 
 const sectionStyle = { borderTop: '1px solid #eee', paddingTop: 16 };
 const hintStyle = { margin: '4px 0 8px', color: '#666', fontSize: 14 };
@@ -116,15 +117,13 @@ export default function TestingCriteria({ params }) {
     setSaving(false);
   }
 
-  if (loading) return <p style={{ padding: 24 }}>Loading...</p>;
+  if (loading) return <p style={{ padding: 24, display: 'flex', gap: 8, alignItems: 'center' }}><Spinner /> Loading…</p>;
 
   const ruleProps = { criteria, updateField };
 
   return (
     <div style={{ maxWidth: 640, margin: '40px auto', padding: 24 }}>
-      <Link href={`/engagements/${engagementId}`} style={{ display: 'inline-block', marginBottom: 16 }}>
-        &larr; Back to Engagement
-      </Link>
+      <BackLink href={`/engagements/${engagementId}`}>Back to Engagement</BackLink>
       <h1>Configure Testing Criteria</h1>
       <p style={{ color: '#666' }}>These 7 rules decide which journal entries get flagged for this engagement. Uncheck a rule to skip it.</p>
 
@@ -198,7 +197,7 @@ export default function TestingCriteria({ params }) {
         </Rule>
 
         <Rule number={6} title="Unusual Account Combinations" field="flag_unusual_accounts" {...ruleProps}
-          hint="Flag debit/credit account-type pairs that are always suspicious (like Debit Revenue / Credit Expense), or that this client rarely uses. Unbalanced entries are already rejected at upload.">
+          hint="Flag debit/credit account-type pairs that are always suspicious (like Debit Revenue / Credit Expense), or that this client rarely uses.">
           <div style={rowStyle}>
             <span>Rare = used fewer than</span>
             <NumberInput field="combo_min_count" step="1" width={70} {...ruleProps} />
@@ -225,7 +224,7 @@ export default function TestingCriteria({ params }) {
           disabled={saving}
           style={{ padding: '10px 20px', background: '#111', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer' }}
         >
-          {saving ? 'Saving...' : 'Save Criteria'}
+          <BusyLabel busy={saving} busyText="Saving…">Save Criteria</BusyLabel>
         </button>
       </form>
     </div>

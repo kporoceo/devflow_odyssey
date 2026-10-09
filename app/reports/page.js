@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { createClient } from '../../lib/supabaseClient';
 import { useProfile } from '../../components/AppShell';
 import { canPrepareReports, isClient, SIGNOFF_LEVELS, STATUS_COLORS } from '../../lib/roles';
+import { BackLink, Spinner } from '../../components/ui';
 
 // Firm staff: every report, plus a form to start one.
 // Client: only its own engagement's reports that reached the client level.
@@ -18,6 +19,7 @@ export default function Reports() {
   const [onlyWaiting, setOnlyWaiting] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
+  const [fromEngagement, setFromEngagement] = useState('');
   const router = useRouter();
   const supabase = createClient();
 
@@ -27,7 +29,10 @@ export default function Reports() {
       // Links can narrow the list: /reports?engagement=<id> or /reports?waiting=1
       const params = new URLSearchParams(window.location.search);
       const engagementFilter = params.get('engagement');
-      if (engagementFilter) setEngagementId(engagementFilter);
+      if (engagementFilter) {
+        setEngagementId(engagementFilter);
+        setFromEngagement(engagementFilter);
+      }
       if (params.get('waiting') === '1') setOnlyWaiting(true);
 
       let query = supabase
@@ -62,13 +67,16 @@ export default function Reports() {
     router.push(`/reports/${data.id}`);
   }
 
-  if (!profile || loading) return <p style={{ padding: 24 }}>Loading...</p>;
+  if (!profile || loading) return <p style={{ padding: 24, display: 'flex', gap: 8, alignItems: 'center' }}><Spinner /> Loading…</p>;
 
   const myStatuses = SIGNOFF_LEVELS.filter((s) => s.canAct(profile.role)).map((s) => s.status);
   const shown = onlyWaiting ? reports.filter((r) => myStatuses.includes(r.status)) : reports;
 
   return (
     <div style={{ maxWidth: 800, margin: '40px auto', padding: 24 }}>
+      {!isClient(profile.role) && (fromEngagement
+        ? <BackLink href={`/engagements/${fromEngagement}`}>Back to Engagement</BackLink>
+        : <BackLink href="/dashboard">Back to Dashboard</BackLink>)}
       <h1>{isClient(profile.role) ? 'My Reports' : 'Reports'}</h1>
       {isClient(profile.role) && (
         <p style={{ color: '#666' }}>Reports from your auditors appear here once they are ready for your review and sign-off.</p>

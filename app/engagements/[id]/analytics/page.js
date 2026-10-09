@@ -13,7 +13,9 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { createClient } from '../../../../lib/supabaseClient';
 import { runJETests, groupJournalEntries, classifyAccount, RULE_LABELS, RULE_ORDER, DEFAULT_CRITERIA } from '../../../../lib/jeTesting';
-import { askAI, AI_BADGE_STYLE } from '../../../../lib/ai';
+import { askAI } from '../../../../lib/ai';
+import { BackLink, BusyLabel, ClaudeTag, Spinner } from '../../../../components/ui';
+import { fetchAll } from '../../../../lib/fetchAll';
 import { Panel, Tile, Legend, ColumnChart, BarList, HeatTable, DataTable, peso, pesoShort, BLUE, ORANGE } from '../../../../components/charts';
 
 const PAGES = ['Trending', 'Potential SOD', 'Cutoff', 'Posting Date Lag', 'Activity Map', 'Duplicate JEs', 'Weekend JEs', 'Flags & Review'];
@@ -68,6 +70,7 @@ function buildJEs(entries, flagsById, holidays) {
     const flags = lines.flatMap((l) => l.flags);
     return {
       key: first.je_number || `Line ${first.line_no ?? ''}`.trim(),
+      firstId: first.id,
       lines,
       amount: lines.reduce((s, l) => s + Number(l.debit || 0), 0),
       entryDate,
@@ -118,15 +121,16 @@ export default function Analytics({ params }) {
   useEffect(() => {
     async function load() {
       const { data: eng } = await supabase.from('engagements').select('client_name, engagement_name').eq('id', engagementId).single();
-      const { data: entryData } = await supabase
+      const { data: entryData } = await fetchAll(() => supabase
         .from('journal_entries')
         .select('*')
         .eq('engagement_id', engagementId)
         .order('created_at', { ascending: true })
-        .order('line_no', { ascending: true });
+        .order('line_no', { ascending: true })
+        .order('id', { ascending: true }));
       const { data: criteriaData } = await supabase.from('testing_criteria').select('*').eq('engagement_id', engagementId).maybeSingle();
       const { data: holidayData } = await supabase.from('holidays').select('holiday_date, name');
-      const { data: reviewData } = await supabase.from('flag_reviews').select('journal_entry_id, disposition, comment').eq('engagement_id', engagementId);
+      const { data: reviewData } = await fetchAll(() => supabase.from('flag_reviews').select('id, journal_entry_id, disposition, comment').eq('engagement_id', engagementId).order('id'));
       const { data: adjData } = await supabase.from('adjusting_entries').select('status').eq('engagement_id', engagementId);
 
       const merged = { ...DEFAULT_CRITERIA };
@@ -173,13 +177,13 @@ export default function Analytics({ params }) {
   // The AI's notes describe the numbers it was given, so clear them when the view changes.
   useEffect(() => { setAiNotes({}); }, [filters, threshold]);
 
-  if (loading) return <p style={{ padding: 24 }}>Loading...</p>;
+  if (loading) return <p style={{ padding: 24, display: 'flex', gap: 8, alignItems: 'center' }}><Spinner /> Loading the journal entries…</p>;
 
   const total = jes.reduce((s, j) => s + j.amount, 0);
   const months = monthRange([...new Set(jes.map((j) => j.month))]);
   const hasEffective = allJEs.some((j) => j.effective);
   const memoColumns = [
-    { key: 'key', label: 'JE No.' },
+    { key: 'key', label: 'JE No.', format: (v, r) => <Link href={`/engagements/${engagementId}/entries/${r.firstId}`}>{v}</Link> },
     { key: 'memo', label: 'Memo', wrap: true },
     { key: 'entryDate', label: 'Posted' },
     { key: 'acctDate', label: 'Accounting date' },
@@ -541,7 +545,7 @@ export default function Analytics({ params }) {
 
   return (
     <div style={{ padding: 24, maxWidth: 1250, margin: '0 auto' }}>
-      <Link href={`/engagements/${engagementId}`} style={{ display: 'inline-block', marginBottom: 12 }}>&larr; Back to Engagement</Link>
+      <BackLink href={`/engagements/${engagementId}`}>Back to Engagement</BackLink>
 
       {entries.length === 0 ? (
         <p>No journal entries yet. Upload JE data first.</p>
@@ -591,18 +595,18 @@ export default function Analytics({ params }) {
                 <div style={{ background: 'white', borderRadius: 6, padding: 12, marginBottom: 16 }}>
                   {aiNotes[page] ? (
                     <ul style={{ margin: 0, paddingLeft: 18, fontSize: 14 }}>
-                      {aiNotes[page].map((n, i) => <li key={i} style={{ marginBottom: 4 }}><span style={AI_BADGE_STYLE}>AI</span>{n}</li>)}
+                      {aiNotes[page].map((n, i) => <li key={i} style={{ marginBottom: 4 }}><ClaudeTag />{n}</li>)}
                     </ul>
                   ) : (
                     <button onClick={askForNote} disabled={aiBusy}
                       style={{ padding: '7px 14px', background: '#3b4cca', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer' }}>
-                      {aiBusy ? 'Asking AI...' : 'Ask AI what stands out on this page'}
+                      <BusyLabel busy={aiBusy} busyText="Claude is reading this page…">Ask Claude what stands out on this page</BusyLabel>
                     </button>
                   )}
                   {aiMessage && <p style={{ color: '#a70', margin: '6px 0 0' }}>{aiMessage}</p>}
                   {aiNotes[page] && (
                     <p style={{ fontSize: 12, color: '#666', margin: '6px 0 0' }}>
-                      The AI only sees this page&apos;s totals, not the client&apos;s file. Check anything it points out before relying on it.{' '}
+                      Claude only sees this page&apos;s totals, not the client&apos;s file. Check anything it points out before relying on it.{' '}
                       <button onClick={askForNote} disabled={aiBusy} style={{ background: 'none', border: 'none', color: '#3b4cca', cursor: 'pointer', padding: 0 }}>Ask again</button>
                     </p>
                   )}

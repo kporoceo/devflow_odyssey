@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '../../../../lib/supabaseClient';
 import { RULE_LABELS } from '../../../../lib/jeTesting';
+import { fetchAll } from '../../../../lib/fetchAll';
+import { BackLink, Spinner } from '../../../../components/ui';
 
 export default function TestingHistory({ params }) {
   const { id: engagementId } = params;
@@ -47,10 +49,11 @@ export default function TestingHistory({ params }) {
     // Only fetch flags the first time a run is expanded; cache after that.
     if (!flagsByRun[runId]) {
       setLoadingFlags(true);
-      const { data, error } = await supabase
+      const { data, error } = await fetchAll(() => supabase
         .from('je_test_flags')
-        .select('*, journal_entries(account, description, entry_date, debit, credit)')
-        .eq('test_result_id', runId);
+        .select('*, journal_entries(je_number, account, description, entry_date, debit, credit)')
+        .eq('test_result_id', runId)
+        .order('id'));
 
       if (!error) {
         setFlagsByRun((prev) => ({ ...prev, [runId]: data || [] }));
@@ -66,13 +69,11 @@ export default function TestingHistory({ params }) {
     });
   }
 
-  if (loading) return <p style={{ padding: 24 }}>Loading...</p>;
+  if (loading) return <p style={{ padding: 24, display: 'flex', gap: 8, alignItems: 'center' }}><Spinner /> Loading…</p>;
 
   return (
     <div style={{ maxWidth: 800, margin: '40px auto', padding: 24 }}>
-      <Link href={`/engagements/${engagementId}`} style={{ display: 'inline-block', marginBottom: 16 }}>
-        &larr; Back to Engagement
-      </Link>
+      <BackLink href={`/engagements/${engagementId}`}>Back to Engagement</BackLink>
       <h1>Testing History &amp; Audit Trail</h1>
       <p style={{ color: '#666' }}>
         A record of every JE testing run performed on this engagement — who ran it, when, and what was flagged.
@@ -111,24 +112,44 @@ export default function TestingHistory({ params }) {
               {expandedRunId === run.id && (
                 <div style={{ borderTop: '1px solid #eee', padding: 16, background: '#fafafa' }}>
                   {loadingFlags && !flagsByRun[run.id] ? (
-                    <p>Loading flags...</p>
+                    <p style={{ display: 'flex', gap: 8, alignItems: 'center' }}><Spinner /> Loading flags…</p>
                   ) : flagsByRun[run.id]?.length === 0 ? (
                     <p style={{ color: '#666', margin: 0 }}>No entries were flagged in this run.</p>
                   ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                      {flagsByRun[run.id]?.map((flag) => (
-                        <div key={flag.id} style={{ background: 'white', padding: 10, borderRadius: 6, borderLeft: '3px solid crimson', fontSize: 14 }}>
-                          <strong>{flag.journal_entries?.account}</strong>
-                          {' — '}
-                          {flag.journal_entries?.description} ({flag.journal_entries?.entry_date})
-                          <div style={{ marginTop: 4 }}>
-                            <span style={{ background: '#fdeaea', color: '#a33', padding: '2px 8px', borderRadius: 4, marginRight: 8, fontSize: 12 }}>
-                              {RULE_LABELS[flag.rule] || flag.rule}
-                            </span>
-                            <span style={{ color: '#666', fontSize: 13 }}>{flag.reason}</span>
-                          </div>
-                        </div>
-                      ))}
+                    <div style={{ overflowX: 'auto' }}>
+                      <p style={{ margin: '0 0 8px', fontSize: 13, color: '#666' }}>Click a JE number to see the whole entry, its decision and any adjusting entry.</p>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, background: 'white' }}>
+                        <thead>
+                          <tr style={{ textAlign: 'left', color: '#666' }}>
+                            {['JE No.', 'Date', 'Account title', 'Description', 'Amount (₱)', 'Rule', 'Reason'].map((h) => (
+                              <th key={h} style={{ padding: '6px', fontWeight: 500, whiteSpace: 'nowrap', textAlign: h.startsWith('Amount') ? 'right' : 'left' }}>{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {flagsByRun[run.id]?.map((flag) => {
+                            const je = flag.journal_entries || {};
+                            const amount = Number(je.debit) > 0 ? Number(je.debit) : Number(je.credit || 0);
+                            return (
+                              <tr key={flag.id} style={{ borderTop: '1px solid #eee', verticalAlign: 'top' }}>
+                                <td style={{ padding: 6, whiteSpace: 'nowrap' }}>
+                                  <Link href={`/engagements/${engagementId}/entries/${flag.journal_entry_id}`}>{je.je_number || 'Open'}</Link>
+                                </td>
+                                <td style={{ padding: 6, whiteSpace: 'nowrap' }}>{je.entry_date}</td>
+                                <td style={{ padding: 6 }}>{je.account}</td>
+                                <td style={{ padding: 6, color: '#555' }}>{je.description}</td>
+                                <td style={{ padding: 6, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                                  {amount.toLocaleString('en-PH', { minimumFractionDigits: 2 })} {Number(je.debit) > 0 ? 'Dr' : 'Cr'}
+                                </td>
+                                <td style={{ padding: 6 }}>
+                                  <span style={{ background: '#fdeaea', color: '#a33', padding: '2px 8px', borderRadius: 4, fontSize: 12, whiteSpace: 'nowrap' }}>{RULE_LABELS[flag.rule] || flag.rule}</span>
+                                </td>
+                                <td style={{ padding: 6, color: '#666' }}>{flag.reason}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
                     </div>
                   )}
                 </div>

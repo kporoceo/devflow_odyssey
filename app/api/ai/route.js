@@ -16,6 +16,7 @@ import { createClient } from '@supabase/supabase-js';
 import Anthropic from '@anthropic-ai/sdk';
 import { isAuditTeam, isLeadership, canPrepareReports } from '../../../lib/roles';
 import { RULE_LABELS } from '../../../lib/jeTesting';
+import { fetchAll } from '../../../lib/fetchAll';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -227,7 +228,7 @@ async function draftFindings(anthropic, db, body) {
     .maybeSingle();
   if (!run) throw new UserError('Save a JE testing run for this engagement first.');
 
-  const { data: flags } = await db.from('je_test_flags').select('rule').eq('test_result_id', run.id);
+  const { data: flags } = await fetchAll(() => db.from('je_test_flags').select('id, rule').eq('test_result_id', run.id).order('id'));
   const byRule = {};
   (flags || []).forEach((f) => { byRule[RULE_LABELS[f.rule] || f.rule] = (byRule[RULE_LABELS[f.rule] || f.rule] || 0) + 1; });
 

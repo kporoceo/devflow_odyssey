@@ -1,12 +1,15 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '../../../../lib/supabaseClient';
 import { runJETests, getRuleStatus, groupJournalEntries, RULE_LABELS, DEFAULT_CRITERIA } from '../../../../lib/jeTesting';
 import { askAI } from '../../../../lib/ai';
+import { fetchAll } from '../../../../lib/fetchAll';
 import FlagReview from '../../../../components/FlagReview';
+import JELines from '../../../../components/JELines';
+import { BackLink, BusyLabel, ClaudeTag, Spinner } from '../../../../components/ui';
 
 const STATUS_STYLE = {
   on: { label: 'Ran', color: '#2a7' },
@@ -29,6 +32,8 @@ export default function RunJETesting({ params }) {
   const [adjustments, setAdjustments] = useState({}); // entry id -> adjusting_entries row
   const [aiBusy, setAiBusy] = useState(false);
   const [aiMessage, setAiMessage] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [inactive, setInactive] = useState(false);
   const router = useRouter();
   const supabase = createClient();
 
@@ -40,12 +45,16 @@ export default function RunJETesting({ params }) {
         return;
       }
 
-      const { data: entryData } = await supabase
+      const { data: entryData } = await fetchAll(() => supabase
         .from('journal_entries')
         .select('*')
         .eq('engagement_id', engagementId)
         .order('created_at', { ascending: true })
-        .order('line_no', { ascending: true });
+        .order('line_no', { ascending: true })
+        .order('id', { ascending: true }));
+
+      const { data: eng } = await supabase.from('engagements').select('status').eq('id', engagementId).single();
+      setInactive(eng?.status === 'Inactive');
 
       const { data: criteriaData } = await supabase
         .from('testing_criteria')
@@ -57,10 +66,11 @@ export default function RunJETesting({ params }) {
         .from('holidays')
         .select('holiday_date, name');
 
-      const { data: reviewData } = await supabase
+      const { data: reviewData } = await fetchAll(() => supabase
         .from('flag_reviews')
         .select('*')
-        .eq('engagement_id', engagementId);
+        .eq('engagement_id', engagementId)
+        .order('id', { ascending: true }));
       const { data: adjustmentData } = await supabase
         .from('adjusting_entries')
         .select('*')
@@ -99,6 +109,16 @@ export default function RunJETesting({ params }) {
   }
 
   async function handleSaveResults() {
+    setSaving(true);
+    setSaveMessage('');
+    try {
+      await saveResults();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function saveResults() {
     const { data: { user } } = await supabase.auth.getUser();
     const flaggedEntries = results.filter((r) => r.flags.length > 0);
 
@@ -130,8 +150,9 @@ export default function RunJETesting({ params }) {
       });
     });
 
-    if (flagRows.length > 0) {
-      const { error: flagError } = await supabase.from('je_test_flags').insert(flagRows);
+    // Saved 500 at a time, like the upload, so a large run isn't one huge request.
+    for (let i = 0; i < flagRows.length; i += 500) {
+      const { error: flagError } = await supabase.from('je_test_flags').insert(flagRows.slice(i, i + 500));
       if (flagError) {
         setSaveMessage(`Results saved, but flags failed: ${flagError.message}`);
         return;
@@ -142,9 +163,15 @@ export default function RunJETesting({ params }) {
   }
 
   // The other lines of the same journal entry, for each line.
+  // line id -> all the lines of its journal entry, worked out once per load.
+  const jeOfLine = useMemo(() => {
+    const map = {};
+    (groupJournalEntries(entries) || []).forEach((g) => g.forEach((l) => { map[l.id] = g; }));
+    return map;
+  }, [entries]);
+
   function linesOfSameJE(entry) {
-    const groups = groupJournalEntries(entries) || [];
-    return groups.find((g) => g.some((l) => l.id === entry.id)) || [entry];
+    return jeOfLine[entry.id] || [entry];
   }
 
   // Asks the AI about the next 10 flagged lines that don't have a note yet.
@@ -169,7 +196,7 @@ export default function RunJETesting({ params }) {
     setAiBusy(false);
   }
 
-  if (loading) return <p style={{ padding: 24 }}>Loading...</p>;
+  if (loading) return <p style={{ padding: 24, display: 'flex', gap: 8, alignItems: 'center' }}><Spinner /> Loading the journal entries…</p>;
 
   const flagged = results ? results.filter((r) => r.flags.length > 0) : [];
   const countByRule = {};
@@ -182,15 +209,18 @@ export default function RunJETesting({ params }) {
 
   return (
     <div style={{ maxWidth: 800, margin: '40px auto', padding: 24 }}>
-      <Link href={`/engagements/${engagementId}`} style={{ display: 'inline-block', marginBottom: 16 }}>
-        &larr; Back to Engagement
-      </Link>
+      <BackLink href={`/engagements/${engagementId}`}>Back to Engagement</BackLink>
       <h1>Run JE Testing</h1>
+      {inactive && (
+        <p style={{ background: '#f3f3f3', padding: 12, borderRadius: 6 }}>
+          This engagement is <strong>Inactive</strong>. You can look at the results, but new runs can&apos;t be saved until Firm Leadership reactivates it.
+        </p>
+      )}
       <p style={{ color: '#666' }}>
-        {entries.length} journal entry lines loaded for this engagement.
+        {loading ? <span style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}><Spinner /> Loading the journal entries…</span> : `${entries.length} journal entry lines loaded for this engagement.`}
       </p>
 
-      {entries.length === 0 && (
+      {!loading && entries.length === 0 && (
         <div style={{ background: '#fff8e6', border: '1px solid #e8c468', padding: 16, borderRadius: 8, marginBottom: 16 }}>
           No journal entries found. <Link href={`/engagements/${engagementId}/upload`}>Upload JE data</Link> first.
         </div>
@@ -202,7 +232,7 @@ export default function RunJETesting({ params }) {
           disabled={running}
           style={{ padding: '12px 24px', background: '#111', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 16 }}
         >
-          {running ? 'Running...' : 'Run JE Testing'}
+          <BusyLabel busy={running} busyText="Running the 7 rules…">Run JE Testing</BusyLabel>
         </button>
       )}
 
@@ -219,9 +249,10 @@ export default function RunJETesting({ params }) {
               <button onClick={handleRun} style={{ padding: '8px 16px', cursor: 'pointer' }}>Re-run</button>
               <button
                 onClick={handleSaveResults}
+                disabled={saving || inactive}
                 style={{ padding: '8px 16px', background: '#111', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer' }}
               >
-                Save Results
+                <BusyLabel busy={saving} busyText="Saving…">Save Results</BusyLabel>
               </button>
             </div>
           </div>
@@ -229,6 +260,14 @@ export default function RunJETesting({ params }) {
           <div style={{ background: 'white', padding: 16, borderRadius: 8, marginBottom: 16 }}>
             <strong>Rules</strong>
             <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: 8, fontSize: 14 }}>
+              <thead>
+                <tr style={{ textAlign: 'left', color: '#666' }}>
+                  <th style={{ padding: '6px 4px', fontWeight: 500 }}>Rule</th>
+                  <th style={{ padding: '6px 4px', fontWeight: 500 }}>Status</th>
+                  <th style={{ padding: '6px 4px', fontWeight: 500, textAlign: 'right' }}>Flagged</th>
+                  <th style={{ padding: '6px 4px', fontWeight: 500 }}>Note</th>
+                </tr>
+              </thead>
               <tbody>
                 {ruleStatus.map((s, i) => (
                   <tr key={s.rule} style={{ borderTop: '1px solid #eee' }}>
@@ -246,7 +285,7 @@ export default function RunJETesting({ params }) {
             <div style={{ background: 'white', padding: 16, borderRadius: 8, marginBottom: 16 }}>
               <strong>Review the flags</strong>
               <p style={{ color: '#666', fontSize: 14, margin: '4px 0 12px' }}>
-                Riskiest first. For each one, pick your decision and write a comment. The AI can explain a flag and draft
+                Riskiest first. For each one, pick your decision and write a comment. Claude can explain a flag and draft
                 the comment, but only you decide. {Object.keys(reviews).filter((id) => flagged.some((f) => f.id === id)).length} of {flagged.length} reviewed.
               </p>
               <button
@@ -254,9 +293,13 @@ export default function RunJETesting({ params }) {
                 disabled={aiBusy || sortedFlagged.every((e) => aiNotes[e.id])}
                 style={{ padding: '8px 14px', background: '#3b4cca', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer' }}
               >
-                {aiBusy ? 'Asking AI...' : sortedFlagged.every((e) => aiNotes[e.id]) ? 'AI explained every flag' : 'Ask AI to explain the next 10'}
+                <BusyLabel busy={aiBusy} busyText="Claude is explaining…">
+                  {sortedFlagged.every((e) => aiNotes[e.id]) ? 'Claude explained every flag' : 'Ask Claude to explain the next 10'}
+                </BusyLabel>
               </button>
+              {aiBusy && <p style={{ fontSize: 13, color: '#666', marginBottom: 0 }}>This can take up to a minute.</p>}
               {aiMessage && <p style={{ color: '#a70', marginBottom: 0 }}>{aiMessage}</p>}
+              <p style={{ fontSize: 12, color: '#666', marginBottom: 0 }}><ClaudeTag />AI features in ODYSSEY use Claude, by Anthropic.</p>
             </div>
           )}
 
@@ -267,7 +310,10 @@ export default function RunJETesting({ params }) {
               {sortedFlagged.map((entry) => (
                 <div key={entry.id} style={{ background: 'white', padding: 16, borderRadius: 8, borderLeft: '4px solid crimson' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <strong>{entry.je_number ? `JE ${entry.je_number} · ` : ''}{entry.account}</strong>
+                    <strong>
+                      <Link href={`/engagements/${engagementId}/entries/${entry.id}`}>{entry.je_number ? `JE ${entry.je_number}` : 'Open JE'}</Link>
+                      {' · '}{entry.account}
+                    </strong>
                     <span>
                       {entry.debit > 0 ? `Dr ₱${Number(entry.debit).toLocaleString()}` : `Cr ₱${Number(entry.credit).toLocaleString()}`}
                     </span>
@@ -287,6 +333,10 @@ export default function RunJETesting({ params }) {
                       </div>
                     ))}
                   </div>
+                  <details style={{ marginTop: 8 }}>
+                    <summary style={{ cursor: 'pointer', fontSize: 13, color: '#3b4cca' }}>Show the whole journal entry ({linesOfSameJE(entry).length} lines)</summary>
+                    <div style={{ marginTop: 6 }}><JELines lines={linesOfSameJE(entry)} highlightId={entry.id} /></div>
+                  </details>
                   <FlagReview
                     engagementId={engagementId}
                     entry={entry}

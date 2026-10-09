@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { createClient } from '../../lib/supabaseClient';
 import { useProfile } from '../../components/AppShell';
+import { PasswordInput, Spinner } from '../../components/ui';
 
 // No sign-up here on purpose: Firm Leadership creates every account in
 // Manage Users and gives the person a default password.
@@ -55,13 +56,7 @@ export default function LoginPage() {
 
         <div style={{ marginBottom: 20 }}>
           <label style={{ display: 'block', marginBottom: 4 }}>Password</label>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            style={{ width: '100%', padding: 8, boxSizing: 'border-box' }}
-          />
+          <PasswordInput value={password} onChange={(e) => setPassword(e.target.value)} />
         </div>
 
         {error && <p style={{ color: 'crimson', marginBottom: 12 }}>{error}</p>}
@@ -71,7 +66,7 @@ export default function LoginPage() {
           disabled={loading}
           style={{ width: '100%', padding: 10, background: '#111', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer' }}
         >
-          {loading ? 'Please wait...' : 'Sign In'}
+          {loading ? <span style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}><Spinner /> Signing in…</span> : 'Sign In'}
         </button>
       </form>
 

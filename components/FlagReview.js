@@ -8,7 +8,8 @@
 
 import { useEffect, useState } from 'react';
 import { createClient } from '../lib/supabaseClient';
-import { askAI, AI_BADGE_STYLE } from '../lib/ai';
+import { askAI } from '../lib/ai';
+import { BusyLabel, ClaudeTag } from './ui';
 
 const DECISIONS = {
   Explained: 'Explained (valid)',
@@ -26,7 +27,7 @@ export default function FlagReview({ engagementId, entry, jeLines, accounts, not
   const [comment, setComment] = useState(review?.comment || '');
   const [aiDrafted, setAiDrafted] = useState(review?.ai_drafted || false);
   const [message, setMessage] = useState('');
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState(''); // 'save', 'ai' or 'propose' while waiting
 
   // Adjusting entry editor (only for decision = Error)
   const [adjOpen, setAdjOpen] = useState(false);
@@ -43,7 +44,7 @@ export default function FlagReview({ engagementId, entry, jeLines, accounts, not
   async function saveReview() {
     if (!decision) { setMessage('Pick a decision.'); return; }
     if (!comment.trim()) { setMessage('Write a comment. It goes in the working papers.'); return; }
-    setBusy(true);
+    setBusy('save');
     const { data, error } = await supabase
       .from('flag_reviews')
       .upsert({
@@ -56,14 +57,14 @@ export default function FlagReview({ engagementId, entry, jeLines, accounts, not
       }, { onConflict: 'engagement_id,journal_entry_id' })
       .select()
       .single();
-    setBusy(false);
+    setBusy('');
     if (error) { setMessage(`Error: ${error.message}`); return; }
     setMessage('Decision saved.');
     onReviewSaved(data);
   }
 
   async function draftAdjustmentWithAI() {
-    setBusy(true);
+    setBusy('ai');
     setMessage('');
     try {
       const result = await askAI(supabase, 'draft_adjustment', { entry, je_lines: jeLines, comment, accounts });
@@ -74,7 +75,7 @@ export default function FlagReview({ engagementId, entry, jeLines, accounts, not
     } catch (err) {
       setMessage(err.message);
     }
-    setBusy(false);
+    setBusy('');
   }
 
   function writeAdjustmentMyself() {
@@ -95,7 +96,7 @@ export default function FlagReview({ engagementId, entry, jeLines, accounts, not
 
   async function proposeAdjustment() {
     if (!adjDescription.trim() || !balanced) return;
-    setBusy(true);
+    setBusy('propose');
     const { data, error } = await supabase
       .from('adjusting_entries')
       .insert({
@@ -107,7 +108,7 @@ export default function FlagReview({ engagementId, entry, jeLines, accounts, not
       })
       .select()
       .single();
-    setBusy(false);
+    setBusy('');
     if (error) { setMessage(`Error: ${error.message}`); return; }
     setAdjOpen(false);
     setMessage('Adjusting entry proposed. The client sees it with the report.');
@@ -121,33 +122,36 @@ export default function FlagReview({ engagementId, entry, jeLines, accounts, not
     <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px dashed #ddd', fontSize: 14 }}>
       {note && (
         <p style={{ margin: '0 0 8px' }}>
-          <span style={AI_BADGE_STYLE}>AI</span>
+          <ClaudeTag />
           <strong style={{ color: RISK_COLORS[note.risk] }}>{note.risk} risk.</strong> {note.explanation}
         </p>
       )}
 
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-        <select value={decision} onChange={(e) => { setDecision(e.target.value); setMessage(''); }} style={{ padding: 6 }}>
+        <label htmlFor={`decision-${entry.id}`} style={{ fontWeight: 600 }}>Decision</label>
+        <select id={`decision-${entry.id}`} value={decision} onChange={(e) => { setDecision(e.target.value); setMessage(''); }} style={{ padding: 6 }}>
           <option value="">Your decision...</option>
           {Object.entries(DECISIONS).map(([v, label]) => <option key={v} value={v}>{label}</option>)}
         </select>
         {note && (
           <button onClick={() => { setComment(note.draft_comment); setAiDrafted(true); }} style={small}>
-            Use AI draft comment
+            Use Claude&apos;s draft comment
           </button>
         )}
         {review && <span style={{ color: '#2a7' }}>Saved: {DECISIONS[review.disposition]}</span>}
       </div>
+      <label htmlFor={`comment-${entry.id}`} style={{ display: 'block', fontWeight: 600, marginTop: 8 }}>Comment</label>
       <textarea
+        id={`comment-${entry.id}`}
         value={comment}
         onChange={(e) => { setComment(e.target.value); setMessage(''); }}
         rows={2}
-        placeholder="Your comment (required)"
-        style={{ width: '100%', boxSizing: 'border-box', marginTop: 8, padding: 8, fontFamily: 'inherit' }}
+        placeholder="What you checked and what you found (needed to save)"
+        style={{ width: '100%', boxSizing: 'border-box', marginTop: 4, padding: 8, fontFamily: 'inherit' }}
       />
-      {aiDrafted && <p style={{ margin: '2px 0 0', fontSize: 12, color: '#666' }}><span style={AI_BADGE_STYLE}>AI draft</span>Edit it so it says what you found.</p>}
-      <button onClick={saveReview} disabled={busy} style={{ ...small, marginTop: 8, background: '#111', color: 'white', border: 'none', borderRadius: 4 }}>
-        Save decision
+      {aiDrafted && <p style={{ margin: '2px 0 0', fontSize: 12, color: '#666' }}><ClaudeTag text="Claude draft" />Edit it so it says what you found.</p>}
+      <button onClick={saveReview} disabled={!!busy} style={{ ...small, marginTop: 8, background: '#111', color: 'white', border: 'none', borderRadius: 4 }}>
+        <BusyLabel busy={busy === 'save'} busyText="Saving…">Save decision</BusyLabel>
       </button>
 
       {review?.disposition === 'Error' && (
@@ -165,13 +169,17 @@ export default function FlagReview({ engagementId, entry, jeLines, accounts, not
             </div>
           ) : !adjOpen ? (
             <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
-              <button onClick={draftAdjustmentWithAI} disabled={busy} style={aiButton}>{busy ? 'Asking AI...' : 'Draft it with AI'}</button>
-              <button onClick={writeAdjustmentMyself} disabled={busy} style={small}>Write it myself</button>
+              <button onClick={draftAdjustmentWithAI} disabled={!!busy} style={aiButton}>
+                <BusyLabel busy={busy === 'ai'} busyText="Claude is drafting…">Draft it with Claude</BusyLabel>
+              </button>
+              <button onClick={writeAdjustmentMyself} disabled={!!busy} style={small}>Write it myself</button>
             </div>
           ) : (
             <div style={{ marginTop: 6 }}>
-              {adjByAI && <p style={{ margin: '0 0 6px', fontSize: 12, color: '#666' }}><span style={AI_BADGE_STYLE}>AI draft</span>Check every line before proposing it.</p>}
+              {adjByAI && <p style={{ margin: '0 0 6px', fontSize: 12, color: '#666' }}><ClaudeTag text="Claude draft" />Check every line before proposing it.</p>}
+              <label htmlFor={`adj-desc-${entry.id}`} style={{ display: 'block', fontWeight: 600, marginBottom: 4 }}>Description</label>
               <input
+                id={`adj-desc-${entry.id}`}
                 value={adjDescription}
                 onChange={(e) => setAdjDescription(e.target.value)}
                 style={{ width: '100%', boxSizing: 'border-box', padding: 6, marginBottom: 6 }}
@@ -181,7 +189,7 @@ export default function FlagReview({ engagementId, entry, jeLines, accounts, not
               </datalist>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
-                  <tr style={{ color: '#666', textAlign: 'left' }}><th>Account</th><th>Debit</th><th>Credit</th><th /></tr>
+                  <tr style={{ color: '#666', textAlign: 'left' }}><th>Account title</th><th>Debit</th><th>Credit</th><th><span style={{ position: 'absolute', left: -9999 }}>Remove</span></th></tr>
                 </thead>
                 <tbody>
                   {adjLines.map((l, i) => (
@@ -202,8 +210,8 @@ export default function FlagReview({ engagementId, entry, jeLines, accounts, not
                 </span>
               </div>
               <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                <button onClick={proposeAdjustment} disabled={busy || !balanced || !adjDescription.trim()} style={{ ...small, background: '#111', color: 'white', border: 'none', borderRadius: 4 }}>
-                  Propose to client
+                <button onClick={proposeAdjustment} disabled={!!busy || !balanced || !adjDescription.trim()} style={{ ...small, background: '#111', color: 'white', border: 'none', borderRadius: 4 }}>
+                  <BusyLabel busy={busy === 'propose'} busyText="Proposing…">Propose to client</BusyLabel>
                 </button>
                 <button onClick={() => setAdjOpen(false)} style={small}>Cancel</button>
               </div>

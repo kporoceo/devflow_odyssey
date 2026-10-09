@@ -1,13 +1,15 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
 import { createClient } from '../../../../lib/supabaseClient';
 import { groupJournalEntries, classifyAccount } from '../../../../lib/jeTesting';
-import { askAI, AI_BADGE_STYLE } from '../../../../lib/ai';
+import { askAI } from '../../../../lib/ai';
+import { BackLink, BusyLabel, ClaudeTag, Spinner } from '../../../../components/ui';
+import { fetchAll } from '../../../../lib/fetchAll';
 
 const REQUIRED_COLUMNS = ['date', 'account', 'description', 'debit', 'credit'];
 
@@ -36,7 +38,7 @@ const FIELD_LABELS = {
 };
 const ALL_FIELDS = Object.keys(FIELD_LABELS);
 const CLASS_OPTIONS = ['Asset', 'Liability', 'Equity', 'Revenue', 'Expense', 'Suspense'];
-const SOURCE_LABELS = { File: 'from file', Saved: 'saved before', Guess: 'guess', AI: 'AI suggestion', Person: 'you chose' };
+const SOURCE_LABELS = { File: 'from file', Saved: 'saved before', Guess: 'guess', AI: 'Claude suggestion', Person: 'you chose' };
 
 // Extensions we actually know how to read.
 const SUPPORTED_EXTENSIONS = ['csv', 'xlsx', 'xls'];
@@ -61,6 +63,49 @@ function normalizeHeader(h) {
 
 function getExtension(filename) {
   return filename.split('.').pop().toLowerCase();
+}
+
+// Real client exports often start with title rows ("ABC Corp", "General
+// Ledger", "For the year ended ...") before the column headings. The
+// heading row is the first of the top 30 rows that is about as wide as the
+// widest row there (at least 3 filled cells). Rows above it are skipped.
+function findHeaderRow(grid) {
+  const filled = (row) => (row || []).filter((c) => String(c ?? '').trim() !== '').length;
+  const top = grid.slice(0, 30);
+  const widest = Math.max(0, ...top.map(filled));
+  const need = Math.max(3, Math.ceil(widest * 0.6));
+  const i = top.findIndex((row) => filled(row) >= need);
+  return i === -1 ? 0 : i;
+}
+
+// Turns a grid (rows of cells) into headings plus one object per row.
+// Blank headings become "Column 4"; repeated ones get "(2)". Each row
+// remembers its row number in the file (not sent anywhere) so error
+// messages point at the right row.
+function gridToTable(grid) {
+  const headerIndex = findHeaderRow(grid);
+  const seen = {};
+  const headers = (grid[headerIndex] || []).map((h, i) => {
+    let name = String(h ?? '').trim() || `Column ${i + 1}`;
+    seen[name] = (seen[name] || 0) + 1;
+    if (seen[name] > 1) name = `${name} (${seen[name]})`;
+    return name;
+  });
+  const rows = [];
+  grid.slice(headerIndex + 1).forEach((cells, i) => {
+    if (!cells || cells.every((c) => String(c ?? '').trim() === '')) return;
+    const row = {};
+    headers.forEach((h, j) => { row[h] = cells[j] ?? ''; });
+    Object.defineProperty(row, '__row', { value: headerIndex + i + 2, enumerable: false });
+    rows.push(row);
+  });
+  return { headers, rows, headerRow: headerIndex + 1 };
+}
+
+// Rough number of rows in a sheet, from its used range, without reading it.
+function sheetRowCount(sheet) {
+  if (!sheet || !sheet['!ref']) return 0;
+  return XLSX.utils.decode_range(sheet['!ref']).e.r + 1;
 }
 
 // Turns a date cell into "YYYY-MM-DD", or null if it isn't a date.
@@ -94,7 +139,11 @@ export default function UploadJEData({ params }) {
   const [clientName, setClientName] = useState('');
   const [rawHeaders, setRawHeaders] = useState([]);
   const [rawRows, setRawRows] = useState([]);
-  const [sheetCount, setSheetCount] = useState(1);
+  const [sheets, setSheets] = useState([]);         // Excel only: [{ name, rows }]
+  const [sheetName, setSheetName] = useState('');
+  const [inactive, setInactive] = useState(false);
+  const [headerRow, setHeaderRow] = useState(1);
+  const workbookRef = useRef(null);
   const [mapping, setMapping] = useState({});        // ODYSSEY field -> client's column name
   const [mappingByAI, setMappingByAI] = useState(false);
   const [parsedRows, setParsedRows] = useState([]);
@@ -108,8 +157,11 @@ export default function UploadJEData({ params }) {
   const supabase = createClient();
 
   useEffect(() => {
-    supabase.from('engagements').select('client_name').eq('id', engagementId).single()
-      .then(({ data }) => setClientName(data?.client_name || ''));
+    supabase.from('engagements').select('client_name, status').eq('id', engagementId).single()
+      .then(({ data }) => {
+        setClientName(data?.client_name || '');
+        setInactive(data?.status === 'Inactive');
+      });
   }, [engagementId]);
 
   function handleFileChange(e) {
@@ -141,11 +193,18 @@ export default function UploadJEData({ params }) {
 
     setStatus('validating');
 
+    workbookRef.current = null;
+    setSheets([]);
+    setSheetName('');
+
     if (ext === 'csv') {
       Papa.parse(file, {
-        header: true,
+        header: false,
         skipEmptyLines: true,
-        complete: (results) => handleFileRead(results.meta.fields || [], results.data),
+        complete: (results) => {
+          const table = gridToTable(results.data);
+          handleFileRead(table.headers, table.rows, table.headerRow);
+        },
         error: (err) => {
           setValidationErrors([`Could not read file: ${err.message}`]);
           setStatus('error');
@@ -155,13 +214,14 @@ export default function UploadJEData({ params }) {
       const reader = new FileReader();
       reader.onload = (evt) => {
         try {
-          const workbook = XLSX.read(evt.target.result, { type: 'binary' });
-          const firstSheetName = workbook.SheetNames[0];
-          const sheet = workbook.Sheets[firstSheetName];
-          const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
-          const fields = rows.length > 0 ? Object.keys(rows[0]) : [];
-
-          handleFileRead(fields, rows, workbook.SheetNames.length);
+          const workbook = XLSX.read(new Uint8Array(evt.target.result), { type: 'array' });
+          workbookRef.current = workbook;
+          const list = workbook.SheetNames.map((name) => ({ name, rows: sheetRowCount(workbook.Sheets[name]) }));
+          setSheets(list);
+          // Start with the biggest sheet; it's usually the ledger. The
+          // person can pick another one from the list.
+          const biggest = list.reduce((a, b) => (b.rows > a.rows ? b : a), list[0]);
+          readSheet(biggest.name);
         } catch (err) {
           setValidationErrors([`Could not read Excel file: ${err.message}`]);
           setStatus('error');
@@ -171,7 +231,7 @@ export default function UploadJEData({ params }) {
         setValidationErrors(['Could not read the file. It may be corrupted.']);
         setStatus('error');
       };
-      reader.readAsBinaryString(file);
+      reader.readAsArrayBuffer(file);
     }
   }
 
@@ -179,15 +239,32 @@ export default function UploadJEData({ params }) {
   // First the usual names, then this client's saved matching (if every
   // saved column is in this file). If a required one is still missing,
   // the person matches them (with an AI suggestion if they want).
-  async function handleFileRead(headers, rows, sheets = 1) {
+  // Excel: read one sheet of the workbook (first time, or when the person
+  // picks another sheet from the list).
+  function readSheet(name) {
+    const workbook = workbookRef.current;
+    if (!workbook) return;
+    setSheetName(name);
+    setValidationErrors([]);
+    setParsedRows([]);
+    setSaveMessage('');
+    setAiMessage('');
+    setMappingByAI(false);
+    setStatus('validating');
+    const grid = XLSX.utils.sheet_to_json(workbook.Sheets[name], { header: 1, defval: '' });
+    const table = gridToTable(grid);
+    handleFileRead(table.headers, table.rows, table.headerRow);
+  }
+
+  async function handleFileRead(headers, rows, foundHeaderRow = 1) {
+    setRawHeaders(headers);
+    setRawRows(rows);
+    setHeaderRow(foundHeaderRow);
     if (rows.length === 0) {
-      setValidationErrors(['The file has no data rows.']);
+      setValidationErrors(['This sheet has no data rows.']);
       setStatus('error');
       return;
     }
-    setRawHeaders(headers);
-    setRawRows(rows);
-    setSheetCount(sheets);
 
     const byNormalized = {};
     headers.forEach((h) => { byNormalized[normalizeHeader(h)] = h; });
@@ -206,7 +283,7 @@ export default function UploadJEData({ params }) {
     setMapping(start);
 
     if (REQUIRED_COLUMNS.every((f) => start[f])) {
-      await validateAndPrepare(start, headers, rows, sheets);
+      await validateAndPrepare(start, headers, rows, foundHeaderRow);
     } else {
       setStatus('mapping');
     }
@@ -224,7 +301,7 @@ export default function UploadJEData({ params }) {
       Object.entries(suggested).forEach(([field, header]) => { if (header && rawHeaders.includes(header)) clean[field] = header; });
       setMapping(clean);
       setMappingByAI(true);
-      setAiMessage('AI suggestion filled in. Check each one, then click Use these columns.');
+      setAiMessage('Claude filled in a suggestion. Check each one, then click Use these columns.');
     } catch (err) {
       setAiMessage(err.message);
     }
@@ -247,17 +324,18 @@ export default function UploadJEData({ params }) {
       await supabase.from('column_maps').upsert({ client_name: clientName, map: mapping, updated_at: new Date().toISOString() });
     }
     setAiMessage('');
-    await validateAndPrepare(mapping, rawHeaders, rawRows, sheetCount);
+    await validateAndPrepare(mapping, rawHeaders, rawRows, headerRow);
   }
 
   // Step 2: check every row using the chosen columns.
-  async function validateAndPrepare(map, headers, dataRows, sheets) {
+  async function validateAndPrepare(map, headers, dataRows, foundHeaderRow = 1) {
     setValidationErrors([]);
     const rowErrors = [];
     const cleanRows = [];
+    const fileRow = {}; // line_no -> row number in the file, for messages
 
     dataRows.forEach((row, index) => {
-      const rowNum = index + 2;
+      const rowNum = row.__row || index + 2;
       const cell = (field) => (map[field] ? String(row[map[field]] ?? '').trim() : '');
       const dateVal = cell('date');
       const accountVal = cell('account');
@@ -294,6 +372,7 @@ export default function UploadJEData({ params }) {
         }
       }
 
+      fileRow[index + 1] = rowNum;
       cleanRows.push({
         engagement_id: engagementId,
         line_no: index + 1,
@@ -327,7 +406,7 @@ export default function UploadJEData({ params }) {
       if (diff !== 0) {
         balanceErrors.push(hasJeNumbers
           ? `JE ${lines[0].je_number}: debits and credits differ by ${peso(Math.abs(diff))}.`
-          : `Rows ${lines[0].line_no + 1} to ${lines[lines.length - 1].line_no + 1}: debits and credits differ by ${peso(Math.abs(diff))}.`);
+          : `Rows ${fileRow[lines[0].line_no]} to ${fileRow[lines[lines.length - 1].line_no]}: debits and credits differ by ${peso(Math.abs(diff))}.`);
       }
     });
     if (balanceErrors.length > 0) {
@@ -336,12 +415,12 @@ export default function UploadJEData({ params }) {
       return;
     }
 
-    setSaveMessage(sheets > 1 ? `Note: this file has ${sheets} sheets — only the first sheet was read.` : '');
+    setSaveMessage(foundHeaderRow > 1 ? `Column headings found on row ${foundHeaderRow}; the ${foundHeaderRow - 1} title row(s) above them were skipped.` : '');
 
     // Step 3: the account type of every account. Taken from the file if it
     // has a valid one, else from this engagement's saved list, else a guess
     // from the name. The person can change any of them, or ask the AI.
-    const { data: saved } = await supabase.from('account_classes').select('account, class').eq('engagement_id', engagementId);
+    const { data: saved } = await fetchAll(() => supabase.from('account_classes').select('account, class').eq('engagement_id', engagementId).order('account'));
     const savedMap = Object.fromEntries((saved || []).map((a) => [a.account, a.class]));
     const classes = {};
     cleanRows.forEach((r) => {
@@ -425,10 +504,13 @@ export default function UploadJEData({ params }) {
 
   return (
     <div style={{ maxWidth: 760, margin: '40px auto', padding: 24 }}>
-      <Link href={`/engagements/${engagementId}`} style={{ display: 'inline-block', marginBottom: 16 }}>
-        &larr; Back to Engagement
-      </Link>
+      <BackLink href={`/engagements/${engagementId}`}>Back to Engagement</BackLink>
       <h1>Upload JE Data</h1>
+      {inactive && (
+        <p style={{ background: '#f3f3f3', padding: 12, borderRadius: 6 }}>
+          This engagement is <strong>Inactive</strong>, so new entries can&apos;t be uploaded. Firm Leadership can reactivate it.
+        </p>
+      )}
       <p style={{ color: '#666' }}>
         Upload the client&apos;s CSV or Excel file as it is. ODYSSEY needs a <strong>Date, Account, Description, Debit and Credit</strong> column.
         If the client names them differently, you&apos;ll match them once and ODYSSEY remembers it for this client.
@@ -438,11 +520,21 @@ export default function UploadJEData({ params }) {
       </p>
 
       <div style={box}>
-        <input type="file" accept=".csv,.xlsx,.xls" onChange={handleFileChange} />
+        <input type="file" accept=".csv,.xlsx,.xls" onChange={handleFileChange} disabled={inactive} />
         {fileName && <p style={{ color: '#666', marginTop: 8 }}>Selected: {fileName}</p>}
+        {sheets.length > 1 && (
+          <p style={{ marginBottom: 0 }}>
+            <label>
+              This workbook has {sheets.length} sheets. Sheet with the journal entries:{' '}
+              <select value={sheetName} onChange={(e) => readSheet(e.target.value)} disabled={status === 'saving'}>
+                {sheets.map((sh) => <option key={sh.name} value={sh.name}>{sh.name} (about {sh.rows.toLocaleString()} rows)</option>)}
+              </select>
+            </label>
+          </p>
+        )}
       </div>
 
-      {status === 'validating' && <p>Validating file...</p>}
+      {status === 'validating' && <p style={{ display: 'flex', gap: 8, alignItems: 'center' }}><Spinner /> Reading and checking the file…</p>}
 
       {validationErrors.length > 0 && (
         <div style={{ background: '#fdeaea', border: '1px solid #e88', padding: 16, borderRadius: 8, marginBottom: 16 }}>
@@ -465,6 +557,12 @@ export default function UploadJEData({ params }) {
             Pick which of the client&apos;s columns holds each field. * = required.
           </p>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+            <thead>
+              <tr style={{ textAlign: 'left', color: '#666' }}>
+                <th style={{ padding: '6px 4px', fontWeight: 500 }}>ODYSSEY field</th>
+                <th style={{ padding: '6px 4px', fontWeight: 500 }}>Client&apos;s column</th>
+              </tr>
+            </thead>
             <tbody>
               {ALL_FIELDS.map((field) => (
                 <tr key={field} style={{ borderTop: '1px solid #eee' }}>
@@ -485,13 +583,13 @@ export default function UploadJEData({ params }) {
           </table>
           <div style={{ display: 'flex', gap: 8, marginTop: 12, alignItems: 'center' }}>
             <button onClick={suggestMappingWithAI} disabled={aiBusy} style={aiButton}>
-              {aiBusy ? 'Asking AI...' : 'Ask AI to match them'}
+              <BusyLabel busy={aiBusy} busyText="Claude is matching…">Ask Claude to match them</BusyLabel>
             </button>
             <button onClick={confirmMapping} disabled={aiBusy} style={{ padding: '8px 14px', background: '#111', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer' }}>
               Use these columns
             </button>
           </div>
-          {mappingByAI && <p style={{ fontSize: 13, color: '#666', marginBottom: 0 }}><span style={AI_BADGE_STYLE}>AI</span>The AI only suggests. You confirm by clicking Use these columns.</p>}
+          {mappingByAI && <p style={{ fontSize: 13, color: '#666', marginBottom: 0 }}><ClaudeTag />Claude only suggests. You confirm by clicking Use these columns.</p>}
           {aiMessage && <p style={{ color: '#a70', marginBottom: 0 }}>{aiMessage}</p>}
         </div>
       )}
@@ -519,10 +617,17 @@ export default function UploadJEData({ params }) {
               {unclassified > 0 && <strong style={{ color: '#a70' }}> {unclassified} account(s) still have no type.</strong>}
             </p>
             <button onClick={sortAccountsWithAI} disabled={aiBusy} style={{ ...aiButton, marginBottom: 12 }}>
-              {aiBusy ? 'Asking AI...' : 'Ask AI to sort the accounts'}
+              <BusyLabel busy={aiBusy} busyText="Claude is sorting…">Ask Claude to sort the accounts</BusyLabel>
             </button>
             {aiMessage && <p style={{ color: '#a70', marginTop: 0 }}>{aiMessage}</p>}
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+              <thead>
+                <tr style={{ textAlign: 'left', color: '#666' }}>
+                  <th style={{ padding: '6px 4px', fontWeight: 500 }}>Account title</th>
+                  <th style={{ padding: '6px 4px', fontWeight: 500 }}>Account type</th>
+                  <th style={{ padding: '6px 4px', fontWeight: 500 }}>Sorted by</th>
+                </tr>
+              </thead>
               <tbody>
                 {accounts.map((account) => {
                   const v = accountClasses[account];
@@ -540,7 +645,7 @@ export default function UploadJEData({ params }) {
                         </select>
                       </td>
                       <td style={{ padding: '6px 4px', color: '#666', fontSize: 12 }}>
-                        {v.source === 'AI' ? <span style={AI_BADGE_STYLE}>AI suggestion</span> : SOURCE_LABELS[v.source]}
+                        {v.source === 'AI' ? <ClaudeTag text="Claude suggestion" /> : SOURCE_LABELS[v.source]}
                       </td>
                     </tr>
                   );
@@ -551,7 +656,7 @@ export default function UploadJEData({ params }) {
 
           <button
             onClick={handleConfirmSave}
-            disabled={aiBusy}
+            disabled={aiBusy || inactive}
             style={{ padding: '10px 20px', background: '#111', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer', marginBottom: 16 }}
           >
             Confirm &amp; Save to Engagement
@@ -559,7 +664,7 @@ export default function UploadJEData({ params }) {
         </>
       )}
 
-      {status === 'saving' && <p>Saving to database...</p>}
+      {status === 'saving' && <p style={{ display: 'flex', gap: 8, alignItems: 'center' }}><Spinner /> Saving {parsedRows.length.toLocaleString()} lines…</p>}
 
       {status === 'done' && (
         <div style={{ background: '#eaf6ea', border: '1px solid #8c8', padding: 16, borderRadius: 8 }}>

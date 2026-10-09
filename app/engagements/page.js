@@ -4,6 +4,25 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '../../lib/supabaseClient';
+import { Spinner } from '../../components/ui';
+
+function EngagementList({ items }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {items.map((eng) => (
+        <Link key={eng.id} href={`/engagements/${eng.id}`}>
+          <div style={{ background: 'white', padding: 12, borderRadius: 6, display: 'flex', justifyContent: 'space-between', cursor: 'pointer' }}>
+            <div>
+              <strong>{eng.engagement_name}</strong>
+              <p style={{ margin: 0, color: '#666' }}>{eng.client_name}</p>
+            </div>
+            <span style={{ alignSelf: 'center', color: eng.status === 'Active' ? '#2a7' : '#888' }}>{eng.status}</span>
+          </div>
+        </Link>
+      ))}
+    </div>
+  );
+}
 
 export default function Engagements() {
   const [engagements, setEngagements] = useState([]);
@@ -35,6 +54,9 @@ export default function Engagements() {
     }
     init();
   }, []);
+
+  const active = engagements.filter((e) => e.status !== 'Inactive');
+  const inactive = engagements.filter((e) => e.status === 'Inactive');
 
   async function handleCreate(e) {
     e.preventDefault();
@@ -91,25 +113,21 @@ export default function Engagements() {
         </button>
       </form>
 
-      <h3>Existing Engagements</h3>
+      <h3>Active engagements</h3>
       {loading ? (
-        <p>Loading...</p>
-      ) : engagements.length === 0 ? (
-        <p style={{ color: '#666' }}>No engagements yet. Create one above.</p>
+        <p style={{ display: 'flex', gap: 8, alignItems: 'center' }}><Spinner /> Loading…</p>
+      ) : active.length === 0 ? (
+        <p style={{ color: '#666' }}>No active engagements. Create one above.</p>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {engagements.map((eng) => (
-            <Link key={eng.id} href={`/engagements/${eng.id}`}>
-              <div style={{ background: 'white', padding: 12, borderRadius: 6, display: 'flex', justifyContent: 'space-between', cursor: 'pointer' }}>
-                <div>
-                  <strong>{eng.engagement_name}</strong>
-                  <p style={{ margin: 0, color: '#666' }}>{eng.client_name}</p>
-                </div>
-                <span style={{ alignSelf: 'center', color: '#2a7' }}>{eng.status}</span>
-              </div>
-            </Link>
-          ))}
-        </div>
+        <EngagementList items={active} />
+      )}
+
+      {inactive.length > 0 && (
+        <details style={{ marginTop: 24 }}>
+          <summary style={{ cursor: 'pointer', fontWeight: 600 }}>Inactive engagements ({inactive.length})</summary>
+          <p style={{ color: '#666', fontSize: 14 }}>Read-only: no new uploads or test runs. Firm Leadership can reactivate them.</p>
+          <EngagementList items={inactive} />
+        </details>
       )}
     </div>
   );

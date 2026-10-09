@@ -4,6 +4,8 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '../../lib/supabaseClient';
 import { useProfile, applyTheme } from '../../components/AppShell';
+import { homeFor, isClient } from '../../lib/roles';
+import { BackLink } from '../../components/ui';
 
 const THEMES = [
   { value: 'light', label: 'Light' },
@@ -35,6 +37,7 @@ export default function Settings() {
 
   return (
     <div style={{ maxWidth: 600, margin: '40px auto', padding: 24 }}>
+      <BackLink href={homeFor(profile.role)}>Back to {isClient(profile.role) ? 'My Reports' : 'Dashboard'}</BackLink>
       <h1>Settings</h1>
 
       <div style={{ background: 'white', padding: 20, borderRadius: 8, marginBottom: 16 }}>

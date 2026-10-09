@@ -10,12 +10,27 @@ import { createContext, useContext, useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '../lib/supabaseClient';
+import { Spinner } from './ui';
 import { isLeadership, isAuditTeam, isClient, isFirmStaff, teamOf, homeFor } from '../lib/roles';
 
 const ProfileContext = createContext({ profile: null, refreshProfile: async () => {} });
 
 export function useProfile() {
   return useContext(ProfileContext);
+}
+
+// The person's picture, or their initials in a circle if they have none.
+export function Avatar({ profile, size = 36 }) {
+  const name = profile?.full_name || profile?.email || '?';
+  const initials = name.split(/[\s@.]+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('');
+  if (profile?.avatar_url) {
+    return <img src={profile.avatar_url} alt="" width={size} height={size} style={{ width: size, height: size, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />;
+  }
+  return (
+    <span aria-hidden="true" style={{ width: size, height: size, borderRadius: '50%', background: '#3e4c59', color: '#f5f7fa', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: size * 0.4, fontWeight: 600, flexShrink: 0 }}>
+      {initials}
+    </span>
+  );
 }
 
 const PUBLIC_PATHS = ['/login'];
@@ -39,9 +54,9 @@ function redirectFor(profile, path) {
   if (!isFirmStaff(profile.role)) return '/account';
 
   if (path.startsWith('/admin') && !isLeadership(profile.role)) return '/dashboard';
-  // JE testing pages: Audit Team only. Testing history and Analytics: Audit Team and Firm Leadership.
+  // JE testing pages: Audit Team only. Testing history, Analytics and the JE detail page: Audit Team and Firm Leadership.
   if (/^\/engagements\/[^/]+\/(upload|criteria|testing)/.test(path) && !isAuditTeam(profile.role)) return '/dashboard';
-  if (/^\/engagements\/[^/]+\/(history|analytics)/.test(path) && !isAuditTeam(profile.role) && !isLeadership(profile.role)) return '/dashboard';
+  if (/^\/engagements\/[^/]+\/(history|analytics|entries)/.test(path) && !isAuditTeam(profile.role) && !isLeadership(profile.role)) return '/dashboard';
   return null;
 }
 
@@ -80,7 +95,7 @@ export default function AppShell({ children }) {
     }
     const { data } = await supabase
       .from('profiles')
-      .select('id, full_name, email, role, must_change_password, is_active, client_engagement_id, theme')
+      .select('*') // includes avatar_url once Part H's SQL has run
       .eq('id', user.id)
       .single();
 
@@ -125,7 +140,7 @@ export default function AppShell({ children }) {
     return <ProfileContext.Provider value={value}>{children}</ProfileContext.Provider>;
   }
   if (!checked || target) {
-    return <p style={{ padding: 24 }}>Loading...</p>;
+    return <p style={{ padding: 24, display: 'flex', gap: 8, alignItems: 'center' }}><Spinner /> Loading…</p>;
   }
 
   const showNav = !profile.must_change_password;
@@ -136,9 +151,10 @@ export default function AppShell({ children }) {
         {showNav && (
           <nav style={{ width: 210, flexShrink: 0, background: '#1f2933', color: '#f5f7fa', padding: '20px 12px', display: 'flex', flexDirection: 'column', gap: 4 }}>
             <div style={{ fontWeight: 'bold', fontSize: 20, padding: '0 8px 4px' }}>ODYSSEY</div>
-            <div style={{ fontSize: 12, color: '#9aa5b1', padding: '0 8px 16px' }}>
-              {profile.full_name || profile.email}<br />{profile.role} · {teamOf(profile.role)}
-            </div>
+            <Link href="/account" style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '4px 8px 16px', textDecoration: 'none', color: '#9aa5b1', fontSize: 12 }}>
+              <Avatar profile={profile} />
+              <span>{profile.full_name || profile.email}<br />{profile.role} · {teamOf(profile.role)}</span>
+            </Link>
             {navItems(profile.role).map((item) => {
               const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
               return (

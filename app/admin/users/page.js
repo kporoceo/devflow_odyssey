@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { createClient } from '../../../lib/supabaseClient';
 import { useProfile } from '../../../components/AppShell';
 import { ALL_ROLES, CLIENT_ROLE, teamOf } from '../../../lib/roles';
+import { BackLink, BusyLabel } from '../../../components/ui';
 
 const EMPTY_FORM = { full_name: '', email: '', role: 'Audit Associate', client_engagement_id: '' };
 
@@ -94,6 +95,7 @@ export default function ManageUsers() {
 
   return (
     <div style={{ maxWidth: 960, margin: '40px auto', padding: 24 }}>
+      <BackLink href="/dashboard">Back to Dashboard</BackLink>
       <h1>Manage Users</h1>
       <p style={{ color: '#666' }}>Only Firm Leadership can create accounts. Each new account gets a default password, which the person must change at first login.</p>
 
@@ -117,7 +119,7 @@ export default function ManageUsers() {
           )}
         </div>
         <button type="submit" disabled={busy} style={{ marginTop: 16, padding: '10px 20px', background: '#111', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer' }}>
-          {busy ? 'Working...' : 'Create account'}
+          <BusyLabel busy={busy} busyText="Creating…">Create account</BusyLabel>
         </button>
       </form>
 
