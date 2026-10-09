@@ -12,6 +12,7 @@ import { fetchAll } from '../../lib/fetchAll';
 import { useProfile } from '../../components/AppShell';
 import { teamOf, isLeadership, isAuditTeam, SIGNOFF_LEVELS } from '../../lib/roles';
 import { BarList, BLUE } from '../../components/charts';
+import { Spinner } from '../../components/ui';
 
 const STAGES = ['Draft', 'Returned', 'For Review', 'For Partner Approval', 'For Client Approval', 'Signed Off'];
 
@@ -187,7 +188,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {!data && <p className="loading">Loading…</p>}
+      {!data && <p className="loading" style={{ padding: 0 }}><Spinner /> Loading…</p>}
 
       {data && (
         <div className="stack-lg">
@@ -205,99 +206,106 @@ export default function Dashboard() {
             })}
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 24, alignItems: 'start' }}>
+          <div className="split split-wide">
+            {/* Engagement Progress */}
             <section className="card">
-              <div className="card-header"><h2 className="card-title">Needs your attention</h2></div>
-              {todo.length === 0 && <p className="muted" style={{ margin: 0 }}>Nothing waiting for you right now.</p>}
-              {todo.slice(0, 8).map((t, i) => (
-                <Link key={i} href={t.href} style={listRow}>
-                  <span style={{ width: 8, height: 8, borderRadius: 2, background: t.color, marginTop: 8, flexShrink: 0 }} />
-                  <span>
-                    <span style={{ display: 'block', fontSize: 14, color: 'var(--text)' }}>{t.text}</span>
-                    <span className="muted" style={{ display: 'block', fontSize: 12 }}>{t.sub}</span>
-                  </span>
-                </Link>
-              ))}
-              {todo.length > 8 && <p className="muted" style={{ fontSize: 12, margin: '12px 0 0' }}>And {todo.length - 8} more.</p>}
-            </section>
-
-            <section className="card">
-              <div className="card-header"><h2 className="card-title">Reports by stage</h2></div>
-              <BarList
-                rows={STAGES.map((s) => ({ label: s, value: data.reports.filter((r) => r.status === s).length, color: s === 'Signed Off' ? 'var(--success)' : BLUE }))}
-                format={(n) => String(n)}
-                max={Math.max(1, ...STAGES.map((s) => data.reports.filter((r) => r.status === s).length))}
-              />
-              <p className="muted" style={{ fontSize: 12, margin: '12px 0 0' }}>
-                {data.reports.length} report(s) in all. Sign-off order: Preparer, A&amp;A Lead, Partner, Client.
-              </p>
-            </section>
-          </div>
-
-          <section className="card">
-            <div className="card-header"><h2 className="card-title">Engagement progress</h2></div>
-            {rows.length === 0 && <p className="muted" style={{ margin: 0 }}>No engagements yet.</p>}
-            {rows.length > 0 && (
-              <div className="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Client · Engagement</th>
-                      <th className="num">Lines</th>
-                      <th>Last tested</th>
-                      <th>Flags reviewed</th>
-                      <th className="num">Open AJEs</th>
-                      <th>Report</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.map((r) => {
-                      const pct = r.flagged ? Math.round((r.reviewedCount / r.flagged) * 100) : null;
-                      return (
-                        <tr key={r.id}>
-                          <td>
-                            <Link href={`/engagements/${r.id}`}>{r.engagement_name}</Link>
-                            <div className="muted" style={{ fontSize: 12 }}>{r.client_name}</div>
-                          </td>
-                          <td className="num">{r.lines.toLocaleString()}</td>
-                          <td>{day(r.run?.run_at)}</td>
-                          <td style={{ minWidth: 150 }}>
-                            {pct === null
-                              ? <span className="muted small">{r.run ? 'No flags' : '—'}</span>
-                              : (
-                                <div title={`${r.reviewedCount} of ${r.flagged} flagged lines reviewed`}>
-                                  <div className="progress">
-                                    <span style={{ width: `${pct}%`, background: pct === 100 ? 'var(--success)' : BLUE }} />
+              <div className="card-header"><h2 className="card-title">Engagement progress</h2></div>
+              {rows.length === 0 && <p className="muted" style={{ margin: 0 }}>No engagements yet.</p>}
+              {rows.length > 0 && (
+                <div className="table-wrap">
+                  <table className="compact">
+                    <thead>
+                      <tr>
+                        <th>Client · Engagement</th>
+                        <th className="num">Lines</th>
+                        <th>Last tested</th>
+                        <th>Flags reviewed</th>
+                        <th className="num">Open AJEs</th>
+                        <th>Report</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map((r) => {
+                        const pct = r.flagged ? Math.round((r.reviewedCount / r.flagged) * 100) : null;
+                        return (
+                          <tr key={r.id}>
+                            <td>
+                              <Link href={`/engagements/${r.id}`}>{r.engagement_name}</Link>
+                              <div className="muted" style={{ fontSize: 12 }}>{r.client_name}</div>
+                            </td>
+                            <td className="num">{r.lines.toLocaleString()}</td>
+                            <td>{day(r.run?.run_at)}</td>
+                            <td style={{ minWidth: 150 }}>
+                              {pct === null
+                                ? <span className="muted small">{r.run ? 'No flags' : '—'}</span>
+                                : (
+                                  <div title={`${r.reviewedCount} of ${r.flagged} flagged lines reviewed`}>
+                                    <div className="progress">
+                                      <span style={{ width: `${pct}%`, background: pct === 100 ? 'var(--success)' : BLUE }} />
+                                    </div>
+                                    <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>{r.reviewedCount} of {r.flagged} ({pct}%)</div>
                                   </div>
-                                  <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>{r.reviewedCount} of {r.flagged} ({pct}%)</div>
-                                </div>
-                              )}
-                          </td>
-                          <td className={r.openAdjustments ? 'num text-warning' : 'num'}>{r.openAdjustments}</td>
-                          <td>
-                            {r.report
-                              ? <Link href={`/reports/${r.report.id}`} className={STATUS_BADGE[r.report.status] || 'badge'}>{r.report.status}</Link>
-                              : <span className="muted small">None yet</span>}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </section>
+                                )}
+                            </td>
+                            <td className={r.openAdjustments ? 'num text-warning' : 'num'}>{r.openAdjustments}</td>
+                            <td>
+                              {r.report
+                                ? <Link href={`/reports/${r.report.id}`} className={STATUS_BADGE[r.report.status] || 'badge'}>{r.report.status}</Link>
+                                : <span className="muted small">None yet</span>}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
 
-          <section className="card">
-            <div className="card-header"><h2 className="card-title">Recent activity</h2></div>
-            {data.activity.length === 0 && <p className="muted" style={{ margin: 0 }}>No test runs or sign-offs yet.</p>}
-            {data.activity.map((a, i) => (
-              <Link key={i} href={a.href} style={{ ...listRow, justifyContent: 'space-between', gap: 16, fontSize: 14 }}>
-                <span style={{ color: 'var(--text)' }}>{a.text}</span>
-                <span className="muted" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>{when(a.at)}</span>
-              </Link>
-            ))}
-          </section>
+            {/* Needs attention, reports by stage */}
+            <div className="stack-lg">
+              {/* Needs your attention */}
+              <section className="card">
+                <div className="card-header"><h2 className="card-title">Needs your attention</h2></div>
+                {todo.length === 0 && <p className="muted" style={{ margin: 0 }}>Nothing waiting for you right now.</p>}
+                {todo.slice(0, 8).map((t, i) => (
+                  <Link key={i} href={t.href} style={listRow}>
+                    <span style={{ width: 8, height: 8, borderRadius: 2, background: t.color, marginTop: 8, flexShrink: 0 }} />
+                    <span>
+                      <span style={{ display: 'block', fontSize: 14, color: 'var(--text)' }}>{t.text}</span>
+                      <span className="muted" style={{ display: 'block', fontSize: 12 }}>{t.sub}</span>
+                    </span>
+                  </Link>
+                ))}
+                {todo.length > 8 && <p className="muted" style={{ fontSize: 12, margin: '12px 0 0' }}>And {todo.length - 8} more.</p>}
+              </section>
+
+              {/* Reports by stage */}
+              <section className="card">
+                <div className="card-header"><h2 className="card-title">Reports by stage</h2></div>
+                <BarList
+                  rows={STAGES.map((s) => ({ label: s, value: data.reports.filter((r) => r.status === s).length, color: s === 'Signed Off' ? 'var(--success)' : BLUE }))}
+                  format={(n) => String(n)}
+                  max={Math.max(1, ...STAGES.map((s) => data.reports.filter((r) => r.status === s).length))}
+                />
+                <p className="muted" style={{ fontSize: 12, margin: '12px 0 0' }}>
+                  {data.reports.length} report(s) in all. Sign-off order: Preparer, A&amp;A Lead, Partner, Client.
+                </p>
+              </section>
+
+              {/* Recent activity */}
+              <section className="card">
+                <div className="card-header"><h2 className="card-title">Recent activity</h2></div>
+                {data.activity.length === 0 && <p className="muted" style={{ margin: 0 }}>No test runs or sign-offs yet.</p>}
+                {data.activity.map((a, i) => (
+                  <Link key={i} href={a.href} style={{ ...listRow, justifyContent: 'space-between', gap: 16, fontSize: 14 }}>
+                    <span style={{ color: 'var(--text)' }}>{a.text}</span>
+                    <span className="muted" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>{when(a.at)}</span>
+                  </Link>
+                ))}
+              </section>
+            </div>
+          </div>
         </div>
       )}
     </div>

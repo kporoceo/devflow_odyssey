@@ -80,7 +80,7 @@ export default function Engagements() {
   }
 
   return (
-    <div className="page page-narrow">
+    <div className="page">
       <BackLink href="/dashboard">Back to Dashboard</BackLink>
       <div className="page-header">
         <div>
@@ -88,51 +88,56 @@ export default function Engagements() {
         </div>
       </div>
 
-      <form onSubmit={handleCreate} className="card" style={{ marginBottom: 40 }}>
-        <h2 className="card-title" style={{ marginBottom: 20 }}>Create New Engagement</h2>
-        <div className="field">
-          <label>Client Name</label>
-          <input
-            type="text"
-            value={clientName}
-            onChange={(e) => setClientName(e.target.value)}
-            required
-          />
-        </div>
-        <div className="field">
-          <label>Engagement Name</label>
-          <input
-            type="text"
-            value={engagementName}
-            onChange={(e) => setEngagementName(e.target.value)}
-            required
-            placeholder="e.g. FY2026 Annual Audit"
-          />
-        </div>
-        {error && <div className="alert alert-danger" style={{ marginBottom: 16 }}>{error}</div>}
-        <div className="form-actions">
-          <button type="submit" className="btn">
-            Create Engagement
-          </button>
-        </div>
-      </form>
+      <div className="split">
+        <form onSubmit={handleCreate} className="card">
+          <h2 className="card-title" style={{ marginBottom: 20 }}>Create New Engagement</h2>
+          <div className="field">
+            <label>Client Name</label>
+            <input
+              type="text"
+              value={clientName}
+              onChange={(e) => setClientName(e.target.value)}
+              required
+            />
+          </div>
+          <div className="field">
+            <label>Engagement Name</label>
+            <input
+              type="text"
+              value={engagementName}
+              onChange={(e) => setEngagementName(e.target.value)}
+              required
+              placeholder="e.g. FY2026 Annual Audit"
+            />
+          </div>
+          <div className="form-actions">
+            <button type="submit" className="btn">
+              Create Engagement
+            </button>
+          </div>
 
-      <h2 style={{ marginBottom: 16 }}>Active engagements</h2>
-      {loading ? (
-        <p className="loading" style={{ padding: 0 }}><Spinner /> Loading…</p>
-      ) : active.length === 0 ? (
-        <p className="muted">No active engagements. Create one above.</p>
-      ) : (
-        <EngagementList items={active} />
-      )}
+          {error && <div className="alert alert-danger" style={{ marginBottom: 16 }}>{error}</div>}
+        </form>
+        
+        <div className="stack">
+          <h2>Active engagements</h2>
+          {loading ? (
+            <p className="loading" style={{ padding: 0 }}><Spinner /> Loading…</p>
+          ) : active.length === 0 ? (
+            <p className="muted">No active engagements. Create one with the form.</p>
+          ) : (
+            <EngagementList items={active} />
+          )}
 
-      {inactive.length > 0 && (
-        <details style={{ marginTop: 40 }}>
-          <summary style={{ fontWeight: 600 }}>Inactive engagements ({inactive.length})</summary>
-          <p className="muted" style={{ fontSize: 14, margin: '12px 0 16px' }}>Read-only: no new uploads or test runs. Firm Leadership can reactivate them.</p>
-          <EngagementList items={inactive} />
-        </details>
-      )}
+          {inactive.length > 0 && (
+            <details style={{ marginTop: 40 }}>
+              <summary style={{ fontWeight: 600 }}>Inactive engagements ({inactive.length})</summary>
+              <p className="muted" style={{ fontSize: 14, margin: '12px 0 16px' }}>Read-only: no new uploads or test runs. Firm Leadership can reactivate them.</p>
+              <EngagementList items={inactive} />
+            </details>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
