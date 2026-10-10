@@ -301,7 +301,7 @@ tr.row-flagged td:first-child { box-shadow: inset 3px 0 0 var(--warning); }
 .alert p:last-child { margin-bottom: 0; }
 
 /* ---------- Tabs (Analytics pages) ---------- */
-.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 20px; overflow-x: auto; }
+.tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 20px; }
 .tab {
   font: inherit; font-size: 14px; font-weight: 500; color: var(--text-2);
   background: none; border: none; border-bottom: 2px solid transparent;
@@ -384,3 +384,27 @@ input[type="file"]::file-selector-button {
   background: var(--surface); color: var(--text);
 }
 input[type="file"]::file-selector-button:hover { background: var(--surface-2); }
+
+/* ---------- Password box with the eye button inside it ---------- */
+.password-field { position: relative; }
+.password-field input { padding-right: 44px; }
+.password-eye {
+  position: absolute; top: 50%; right: 6px; transform: translateY(-50%);
+  width: 32px; height: 32px; display: grid; place-items: center;
+  border: 0; background: transparent; color: var(--muted); border-radius: var(--radius-sm); cursor: pointer; padding: 0;
+}
+.password-eye:hover { color: var(--text); background: var(--surface-2); }
+.password-eye:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* ---------- Engagement steps (engagement page) ---------- */
+.step-number {
+  width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center;
+  font-size: 13px; font-weight: 600; background: var(--surface-2); color: var(--text-2); border: 1px solid var(--border);
+}
+.step-number.step-done { background: var(--success-soft); color: var(--success); border-color: transparent; }
+.link-card.step-current { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
+.step-next { margin: 10px 0 0; font-size: 12px; font-weight: 600; color: var(--accent-text); text-transform: uppercase; letter-spacing: .04em; }
+.link-card.step-locked { opacity: .6; cursor: default; }
+.link-card.step-locked:hover { transform: none; box-shadow: none; border-color: var(--border); }
+.link-card.step-locked:hover .link-card-title { color: var(--text); }
+

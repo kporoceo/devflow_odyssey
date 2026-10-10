@@ -107,7 +107,6 @@ export default function Engagements() {
               value={engagementName}
               onChange={(e) => setEngagementName(e.target.value)}
               required
-              placeholder="e.g. FY2026 Annual Audit"
             />
           </div>
           <div className="form-actions">

@@ -173,22 +173,22 @@ export function HeatTable({ rowLabels, colLabels, value, format = pesoShort, row
     return { background: HEAT[i], color: i >= 3 ? 'var(--surface)' : INK };
   };
   return (
-    <div style={{ overflowX: 'auto' }}>
-      <table className="heat-table" style={{ borderCollapse: 'separate', borderSpacing: 2, fontSize: 12, width: 'auto' }}>
+    <div>
+      <table className="heat-table" style={{ borderCollapse: 'separate', borderSpacing: 2, fontSize: 11, width: '100%', tableLayout: 'fixed' }}>
         <thead>
           <tr>
-            <th style={{ textAlign: 'left', color: MUTED, fontWeight: 500, padding: '2px 6px' }}>{rowHeader}</th>
-            {colLabels.map((c) => <th key={c} style={{ color: MUTED, fontWeight: 500, padding: '2px 6px', whiteSpace: 'nowrap' }}>{c}</th>)}
+            <th style={{ textAlign: 'left', color: MUTED, fontWeight: 500, padding: '2px 4px', width: 110 }}>{rowHeader}</th>
+            {colLabels.map((c) => <th key={c} style={{ color: MUTED, fontWeight: 500, padding: '2px 2px', textAlign: 'center', lineHeight: 1.2 }}>{c}</th>)}
           </tr>
         </thead>
         <tbody>
           {rowLabels.map((r) => (
             <tr key={r}>
-              <td style={{ padding: '2px 6px', whiteSpace: 'nowrap', color: INK }}>{r}</td>
+              <td style={{ padding: '2px 4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: INK }} title={r}>{r}</td>
               {colLabels.map((c) => {
                 const v = value(r, c);
                 return (
-                  <td key={c} title={v ? `${r}, ${c}: ${peso(v)}` : ''} style={{ ...shade(v), padding: '3px 6px', textAlign: 'right', borderRadius: 3, minWidth: 44 }}>
+                  <td key={c} title={v ? `${r}, ${c}: ${peso(v)}` : ''} style={{ ...shade(v), padding: '3px 3px', textAlign: 'center', borderRadius: 3, whiteSpace: 'nowrap', overflow: 'hidden' }}>
                     {v ? format(v) : ''}
                   </td>
                 );
@@ -202,22 +202,26 @@ export function HeatTable({ rowLabels, colLabels, value, format = pesoShort, row
 }
 
 // A plain scrolling table. columns: [{ key, label, align?, format? }]
+// Shows the first 10 rows; "Show more" opens the rest (up to maxRows), so
+// there's no small scroll box inside the page.
 export function DataTable({ columns, rows, maxRows = 200, emptyText = 'No entries.' }) {
+  const [open, setOpen] = useState(false);
   if (!rows || rows.length === 0) return <p style={{ color: MUTED, fontSize: 13 }}>{emptyText}</p>;
+  const limit = open ? maxRows : Math.min(10, maxRows);
   return (
-    <div style={{ maxHeight: 320, overflow: 'auto' }}>
+    <div>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
         <thead>
           <tr>
             {columns.map((c) => (
-              <th key={c.key} style={{ position: 'sticky', top: 0, textAlign: c.align || 'left', padding: '7px 8px' }}>
+              <th key={c.key} style={{ textAlign: c.align || 'left', padding: '7px 8px' }}>
                 {c.label}
               </th>
             ))}
           </tr>
         </thead>
         <tbody>
-          {rows.slice(0, maxRows).map((r, i) => (
+          {rows.slice(0, limit).map((r, i) => (
             <tr key={i}>
               {columns.map((c) => (
                 <td key={c.key} style={{ padding: '6px 8px', textAlign: c.align || 'left', color: INK, whiteSpace: c.wrap ? 'normal' : 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
@@ -228,7 +232,12 @@ export function DataTable({ columns, rows, maxRows = 200, emptyText = 'No entrie
           ))}
         </tbody>
       </table>
-      {rows.length > maxRows && <p style={{ fontSize: 12, color: MUTED }}>Showing the first {maxRows} of {rows.length}. Download the CSV for all of them.</p>}
+      {rows.length > limit && !open && (
+        <button type="button" onClick={() => setOpen(true)} className="btn btn-ghost btn-sm" style={{ marginTop: 8 }}>
+          Show more ({Math.min(rows.length, maxRows) - limit} more rows)
+        </button>
+      )}
+      {open && rows.length > maxRows && <p style={{ fontSize: 12, color: MUTED }}>Showing the first {maxRows} of {rows.length}. Download the CSV for all of them.</p>}
     </div>
   );
 }

@@ -66,7 +66,7 @@ export default function LoginPage() {
           </form>
 
           <p className="muted small" style={{ marginTop: 20, marginBottom: 0, textAlign: 'center' }}>
-            No account yet? Accounts are created by the firm&apos;s System Administrator.
+            No account yet? Contact ODCC&apos;s System Admin.
           </p>
         </div>
         <p className="auth-footer">Oroceo, Dimandal &amp; Co. CPAs</p>

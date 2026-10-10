@@ -11,6 +11,22 @@ import { ALL_ROLES, CLIENT_ROLE, SYSTEM_ADMIN } from '../../../../lib/roles';
 
 export const dynamic = 'force-dynamic';
 
+// Where the emailed "set your password" link sends people: this same site.
+// The address must be in Supabase > Authentication > URL Configuration > Redirect URLs.
+function callbackUrl(request) {
+  return `${request.headers.get('origin') || new URL(request.url).origin}/auth/callback`;
+}
+
+// Supabase's built-in email only reaches the project's own team; anyone else
+// needs custom SMTP. Turn its error into something the administrator can act on.
+function emailError(error) {
+  const text = error.message || '';
+  if (/not authorized|rate limit|smtp|sending/i.test(text)) {
+    return `The email couldn't be sent (${text}). Set up custom SMTP in Supabase, or untick "Email them a link" to get a default password instead.`;
+  }
+  return text;
+}
+
 function fail(message, status = 400) {
   return NextResponse.json({ error: message }, { status });
 }
@@ -56,7 +72,9 @@ export async function POST(request) {
     return NextResponse.json({ users: users || [], engagements: engagements || [] });
   }
 
-  // 2. Create an account with a default password, shown once to the creator.
+  // 2. Create an account. Either Supabase emails the person a link to set their
+  //    own password (send_email), or the account gets a default password that
+  //    is shown once to the administrator.
   if (body.action === 'create') {
     const email = String(body.email || '').trim().toLowerCase();
     const fullName = String(body.full_name || '').trim();
@@ -64,14 +82,26 @@ export async function POST(request) {
     if (!ALL_ROLES.includes(body.role)) return fail('Choose a role.');
     if (body.role === CLIENT_ROLE && !body.client_engagement_id) return fail('Choose the client\'s engagement.');
 
-    const password = defaultPassword();
-    const { data: created, error } = await admin.auth.admin.createUser({
-      email,
-      password,
-      email_confirm: true, // no confirmation email: the firm hands over the login details
-      user_metadata: { full_name: fullName },
-    });
-    if (error) return fail(error.message.includes('already') ? 'An account with this email already exists.' : error.message);
+    let created;
+    let password = null;
+    if (body.send_email) {
+      const { data, error } = await admin.auth.admin.inviteUserByEmail(email, {
+        data: { full_name: fullName },
+        redirectTo: callbackUrl(request),
+      });
+      if (error) return fail(/already/i.test(error.message) ? 'An account with this email already exists.' : emailError(error));
+      created = data;
+    } else {
+      password = defaultPassword();
+      const { data, error } = await admin.auth.admin.createUser({
+        email,
+        password,
+        email_confirm: true, // no confirmation email: the firm hands over the login details
+        user_metadata: { full_name: fullName },
+      });
+      if (error) return fail(error.message.includes('already') ? 'An account with this email already exists.' : error.message);
+      created = data;
+    }
 
     const { error: profileError } = await admin.from('profiles').upsert({
       id: created.user.id,
@@ -84,7 +114,7 @@ export async function POST(request) {
     });
     if (profileError) return fail(profileError.message);
 
-    return NextResponse.json({ password });
+    return NextResponse.json(password ? { password } : { emailed: email });
   }
 
   const userId = body.user_id;
@@ -110,6 +140,17 @@ export async function POST(request) {
     if (error) return fail(error.message);
     await admin.from('profiles').update({ must_change_password: true }).eq('id', userId);
     return NextResponse.json({ password });
+  }
+
+  // 4b. Forgotten password, by email: Supabase sends a link to set a new one.
+  //     They must still choose a new password if they log in with the old one.
+  if (body.action === 'email_reset') {
+    const { data: target } = await admin.from('profiles').select('email').eq('id', userId).single();
+    if (!target?.email) return fail('This account has no email address.');
+    const { error } = await admin.auth.resetPasswordForEmail(target.email, { redirectTo: callbackUrl(request) });
+    if (error) return fail(emailError(error));
+    await admin.from('profiles').update({ must_change_password: true }).eq('id', userId);
+    return NextResponse.json({ emailed: target.email });
   }
 
   // 5. Deactivate (blocks login) or reactivate an account. Nothing is deleted,

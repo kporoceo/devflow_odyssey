@@ -142,6 +142,7 @@ export default function UploadJEData({ params }) {
   const [sheets, setSheets] = useState([]);         // Excel only: [{ name, rows }]
   const [sheetName, setSheetName] = useState('');
   const [inactive, setInactive] = useState(false);
+  const [existingCount, setExistingCount] = useState(0); // lines already uploaded to this engagement
   const [headerRow, setHeaderRow] = useState(1);
   const workbookRef = useRef(null);
   const [mapping, setMapping] = useState({});        // ODYSSEY field -> client's column name
@@ -162,6 +163,8 @@ export default function UploadJEData({ params }) {
         setClientName(data?.client_name || '');
         setInactive(data?.status === 'Inactive');
       });
+    supabase.from('journal_entries').select('*', { count: 'exact', head: true }).eq('engagement_id', engagementId)
+      .then(({ count }) => setExistingCount(count || 0));
   }, [engagementId]);
 
   function handleFileChange(e) {
@@ -518,6 +521,13 @@ export default function UploadJEData({ params }) {
       {inactive && (
         <p className="alert alert-warning" style={{ marginBottom: 24 }}>
           This engagement is <strong>Inactive</strong>, so new entries can&apos;t be uploaded. Firm Leadership can reactivate it.
+        </p>
+      )}
+      {!inactive && existingCount > 0 && (
+        <p className="alert alert-info" style={{ marginBottom: 24 }}>
+          This engagement already has <strong>{existingCount.toLocaleString()}</strong> uploaded lines. You can upload more than once:
+          a new file is <strong>added</strong> to them (for example, another month or another ledger). Don&apos;t upload the same file twice,
+          or its entries will be counted twice.
         </p>
       )}
 

@@ -57,7 +57,7 @@ export function ClaudeTag({ text = 'Claude' }) {
 export function PasswordInput({ value, onChange, placeholder, autoComplete = 'current-password', required = true, id }) {
   const [show, setShow] = useState(false);
   return (
-    <div style={{ display: 'flex', gap: 8 }}>
+    <div className="password-field">
       <input
         id={id}
         type={show ? 'text' : 'password'}
@@ -66,19 +66,29 @@ export function PasswordInput({ value, onChange, placeholder, autoComplete = 'cu
         placeholder={placeholder}
         autoComplete={autoComplete}
         required={required}
-        style={{ flex: 1, minWidth: 0 }}
       />
       <button
         type="button"
         onClick={() => setShow(!show)}
         aria-pressed={show}
         aria-label={show ? 'Hide password' : 'Show password'}
-        className="btn btn-secondary"
-        style={{ minWidth: 68 }}
+        title={show ? 'Hide password' : 'Show password'}
+        className="password-eye"
       >
-        {show ? 'Hide' : 'Show'}
+        <EyeIcon off={show} />
       </button>
     </div>
+  );
+}
+
+// Open eye = "show the password"; crossed-out eye = "hide it again".
+function EyeIcon({ off }) {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z" />
+      <circle cx="12" cy="12" r="3" />
+      {off && <line x1="3" y1="3" x2="21" y2="21" />}
+    </svg>
   );
 }
 

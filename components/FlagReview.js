@@ -21,7 +21,7 @@ const RISK_COLORS = { High: 'var(--danger)', Medium: 'var(--warning)', Low: 'var
 const toCents = (n) => Math.round((Number(n) || 0) * 100);
 const peso = (n) => `₱${Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-export default function FlagReview({ engagementId, entry, jeLines, accounts, note, review, adjustment, onReviewSaved, onAdjustmentSaved }) {
+export default function FlagReview({ engagementId, entry, entryIds, jeLines, accounts, note, review, adjustment, onReviewSaved, onAdjustmentSaved }) {
   const supabase = createClient();
   const [decision, setDecision] = useState(review?.disposition || '');
   const [comment, setComment] = useState(review?.comment || '');
@@ -45,18 +45,20 @@ export default function FlagReview({ engagementId, entry, jeLines, accounts, not
     if (!decision) { setMessage('Pick a decision.'); return; }
     if (!comment.trim()) { setMessage('Write a comment. It goes in the working papers.'); return; }
     setBusy('save');
+    // One decision covers every flagged line of the journal entry, so it is
+    // saved once per line (the history and analytics count lines).
+    const reviewedAt = new Date().toISOString();
     const { data, error } = await supabase
       .from('flag_reviews')
-      .upsert({
+      .upsert((entryIds || [entry.id]).map((lineId) => ({
         engagement_id: engagementId,
-        journal_entry_id: entry.id,
+        journal_entry_id: lineId,
         disposition: decision,
         comment: comment.trim(),
         ai_drafted: aiDrafted,
-        reviewed_at: new Date().toISOString(),
-      }, { onConflict: 'engagement_id,journal_entry_id' })
-      .select()
-      .single();
+        reviewed_at: reviewedAt,
+      })), { onConflict: 'engagement_id,journal_entry_id' })
+      .select();
     setBusy('');
     if (error) { setMessage(`Error: ${error.message}`); return; }
     setMessage('Decision saved.');
@@ -187,14 +189,14 @@ export default function FlagReview({ engagementId, entry, jeLines, accounts, not
               <div className="table-wrap">
               <table className="compact">
                 <thead>
-                  <tr><th>Account title</th><th className="num">Debit</th><th className="num">Credit</th><th><span style={{ position: 'absolute', left: -9999 }}>Remove</span></th></tr>
+                  <tr><th>Account title</th><th className="num" style={{ width: 150 }}>Debit</th><th className="num" style={{ width: 150 }}>Credit</th><th style={{ width: 48 }}><span style={{ position: 'absolute', left: -9999 }}>Remove</span></th></tr>
                 </thead>
                 <tbody>
                   {adjLines.map((l, i) => (
                     <tr key={i}>
                       <td><input list={`accounts-${entry.id}`} value={l.account} onChange={(e) => setLine(i, 'account', e.target.value)} /></td>
-                      <td><input type="number" min="0" step="0.01" value={l.debit} onChange={(e) => setLine(i, 'debit', e.target.value)} style={{ width: 130 }} /></td>
-                      <td><input type="number" min="0" step="0.01" value={l.credit} onChange={(e) => setLine(i, 'credit', e.target.value)} style={{ width: 130 }} /></td>
+                      <td><input type="number" min="0" step="0.01" value={l.debit} onChange={(e) => setLine(i, 'debit', e.target.value)} style={{ width: '100%', textAlign: 'right' }} /></td>
+                      <td><input type="number" min="0" step="0.01" value={l.credit} onChange={(e) => setLine(i, 'credit', e.target.value)} style={{ width: '100%', textAlign: 'right' }} /></td>
                       <td><button onClick={() => setAdjLines(adjLines.filter((_, j) => j !== i))} className="btn btn-ghost btn-sm">✕</button></td>
                     </tr>
                   ))}

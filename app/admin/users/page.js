@@ -6,7 +6,7 @@ import { useProfile } from '../../../components/AppShell';
 import { ALL_ROLES, CLIENT_ROLE, teamOf } from '../../../lib/roles';
 import { BusyLabel } from '../../../components/ui';
 
-const EMPTY_FORM = { full_name: '', email: '', role: 'Audit Associate', client_engagement_id: '' };
+const EMPTY_FORM = { full_name: '', email: '', role: 'Audit Associate', client_engagement_id: '', send_email: true };
 
 export default function ManageUsers() {
   const { profile } = useProfile();
@@ -15,6 +15,7 @@ export default function ManageUsers() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [edits, setEdits] = useState({}); // { [userId]: { role, client_engagement_id } }
   const [notice, setNotice] = useState(null); // { text, password? }
+  const [copied, setCopied] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const supabase = createClient();
@@ -64,7 +65,10 @@ export default function ManageUsers() {
     setNotice(null);
     const result = await callApi({ action: 'create', ...form });
     if (result) {
-      setNotice({ text: `Account created for ${form.full_name} (${form.email}). Give them this default password. They'll be asked to change it when they first log in.`, password: result.password });
+      setCopied(false);
+      setNotice(result.emailed
+        ? { text: `Account created for ${form.full_name}. ODYSSEY emailed ${result.emailed} a link to set their own password.` }
+        : { text: `Account created for ${form.full_name} (${form.email}). Give them this default password. They'll be asked to change it when they first log in.`, password: result.password });
       setForm(EMPTY_FORM);
     }
   }
@@ -81,7 +85,14 @@ export default function ManageUsers() {
   async function resetPassword(user) {
     if (!confirm(`Give ${user.full_name || user.email} a new default password?`)) return;
     const result = await callApi({ action: 'reset_password', user_id: user.id });
+    setCopied(false);
     if (result) setNotice({ text: `New default password for ${user.full_name || user.email}. They'll be asked to change it at their next login.`, password: result.password });
+  }
+
+  async function emailReset(user) {
+    if (!confirm(`Email ${user.email} a link to set a new password?`)) return;
+    const result = await callApi({ action: 'email_reset', user_id: user.id });
+    if (result) setNotice({ text: `Reset link emailed to ${result.emailed}. They'll set a new password from the link.` });
   }
 
   async function toggleActive(user) {
@@ -103,7 +114,7 @@ export default function ManageUsers() {
       <div className="page-header">
         <div>
           <h1 className="page-title">Manage Users</h1>
-          <p className="page-subtitle">Only the System Administrator creates accounts. Each new account gets a default password, which the person must change at first login. The System Administrator can&apos;t open engagements, journal entries or reports.</p>
+          <p className="page-subtitle">Only the System Administrator creates accounts. Each new account gets an email with a link to set their own password, or a default password that they must change at first login. The System Administrator can&apos;t open engagements, journal entries or reports.</p>
         </div>
       </div>
 
@@ -127,6 +138,11 @@ export default function ManageUsers() {
               </label>
             )}
           </div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 16, fontWeight: 400 }}>
+            <input type="checkbox" checked={form.send_email} onChange={(e) => setForm({ ...form, send_email: e.target.checked })} />
+            Email them a link to set their own password
+          </label>
+          <p className="hint" style={{ margin: '4px 0 0 24px' }}>Untick to get a default password to give them yourself (for accounts without a real inbox).</p>
           <div className="form-actions" style={{ marginTop: 20 }}>
             <button type="submit" disabled={busy} className="btn">
               <BusyLabel busy={busy} busyText="Creating…">Create account</BusyLabel>
@@ -143,6 +159,9 @@ export default function ManageUsers() {
                 {notice.password && (
                   <p style={{ margin: '10px 0 0' }}>
                     Default password: <code style={{ fontSize: 17, fontWeight: 500, background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 'var(--radius-xs)', padding: '2px 8px', userSelect: 'all' }}>{notice.password}</code>
+                    <button type="button" onClick={() => { navigator.clipboard?.writeText(notice.password); setCopied(true); }} className="btn btn-secondary btn-sm" style={{ marginLeft: 10 }}>
+                      {copied ? 'Copied' : 'Copy'}
+                    </button>
                     <br /><span className="small text-2">It is shown only once. Copy it now.</span>
                   </p>
                 )}
@@ -208,6 +227,7 @@ export default function ManageUsers() {
                     <td style={{ whiteSpace: 'nowrap' }}>
                       {!isMe && (
                         <div className="row" style={{ gap: 8, flexWrap: 'nowrap' }}>
+                          <button onClick={() => emailReset(u)} disabled={busy} className="btn btn-secondary btn-sm">Email reset link</button>
                           <button onClick={() => resetPassword(u)} disabled={busy} className="btn btn-secondary btn-sm">Reset password</button>
                           <button onClick={() => toggleActive(u)} disabled={busy} className={u.is_active ? 'btn btn-danger-outline btn-sm' : 'btn btn-secondary btn-sm'}>{u.is_active ? 'Deactivate' : 'Reactivate'}</button>
                         </div>

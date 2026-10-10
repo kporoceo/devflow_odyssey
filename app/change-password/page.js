@@ -60,7 +60,7 @@ export default function ChangePassword() {
         <h1 className="page-title" style={{ fontSize: 22, marginBottom: firstLogin ? 8 : 24 }}>{firstLogin ? 'Set your own password' : 'Change password'}</h1>
         {firstLogin && (
           <p className="text-2" style={{ marginBottom: 24 }}>
-            You logged in with the default password from the System Administrator. Choose your own password to continue.
+            Your account was set up or reset by ODCC&apos;s System Admin. Choose your own password to continue.
           </p>
         )}
 

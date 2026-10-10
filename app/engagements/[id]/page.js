@@ -13,6 +13,7 @@ export default function EngagementDetail({ params }) {
   const { profile } = useProfile();
   const [engagement, setEngagement] = useState(null);
   const [entryCount, setEntryCount] = useState(0);
+  const [progress, setProgress] = useState({ criteria: null, runs: [], reports: [] });
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState('');
   const [message, setMessage] = useState('');
@@ -40,6 +41,14 @@ export default function EngagementDetail({ params }) {
         .eq('engagement_id', id);
 
       setEntryCount(count || 0);
+
+      // What has been done so far, for the step badges below.
+      const [{ data: criteria }, { data: runs }, { data: reports }] = await Promise.all([
+        supabase.from('testing_criteria').select('updated_at').eq('engagement_id', id).maybeSingle(),
+        supabase.from('je_test_results').select('run_at, flagged_count, total_entries').eq('engagement_id', id).order('run_at', { ascending: false }),
+        supabase.from('reports').select('status, updated_at').eq('engagement_id', id).order('updated_at', { ascending: false }),
+      ]);
+      setProgress({ criteria, runs: runs || [], reports: reports || [] });
       setLoading(false);
     }
     load();
@@ -80,17 +89,63 @@ export default function EngagementDetail({ params }) {
     router.push('/engagements');
   }
 
-  // Each card is shown only to the roles allowed to use it (the database
-  // enforces the same rules).
+  // The 6 steps in the order the work is done. Each one shows how far it has
+  // got. A step the person's role can't use is shown greyed out, so everyone
+  // still sees the whole picture (the database enforces the same rules).
   const auditTeam = isAuditTeam(profile.role);
-  const cards = [
-    auditTeam && !inactive && { href: `/engagements/${id}/upload`, title: 'Upload JE Data', text: entryCount > 0 ? `${entryCount} entries uploaded` : 'No entries yet' },
-    auditTeam && { href: `/engagements/${id}/criteria`, title: 'Configure Testing Criteria', text: 'Set the parameters for the 7 JE testing rules' },
-    auditTeam && !inactive && { href: `/engagements/${id}/testing`, title: 'Run JE Testing', text: 'Run the 7 rules against every uploaded entry' },
-    (auditTeam || isLeadership(profile.role)) && { href: `/engagements/${id}/history`, title: 'Testing History & Audit Trail', text: 'Review past runs, who ran them, and what was flagged' },
-    (auditTeam || isLeadership(profile.role)) && { href: `/engagements/${id}/analytics`, title: 'Analytics', text: 'Dashboard of the entries: trends, weekends, posting lag, duplicates and more' },
-    { href: `/reports?engagement=${id}`, title: 'Reports & Sign-off', text: 'Prepare reports and follow their sign-off' },
-  ].filter(Boolean);
+  const canSeeTesting = auditTeam || leadership;
+  const { criteria, runs, reports } = progress;
+  const lastRun = runs[0];
+  const lastReport = reports[0];
+  const day = (d) => new Date(d).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
+  const notAllowed = (who) => (inactive && who === 'audit-active' ? 'The engagement is Inactive' : 'For the Audit Team');
+
+  const steps = [
+    {
+      href: `/engagements/${id}/criteria`, title: 'Configure Testing Criteria',
+      allowed: auditTeam, who: 'audit',
+      done: !!criteria,
+      badge: criteria ? ['Configured', 'badge-success'] : ['Using defaults', 'badge-warning'],
+      text: criteria ? `Saved ${day(criteria.updated_at)}` : 'Set the parameters for the 7 JE testing rules',
+    },
+    {
+      href: `/engagements/${id}/upload`, title: 'Upload JE Data',
+      allowed: auditTeam && !inactive, who: 'audit-active',
+      done: entryCount > 0,
+      badge: entryCount > 0 ? ['Uploaded', 'badge-success'] : ['Not yet', 'badge'],
+      text: entryCount > 0 ? `${entryCount.toLocaleString()} lines uploaded` : 'Upload the client\'s general ledger',
+    },
+    {
+      href: `/engagements/${id}/testing`, title: 'Run JE Testing',
+      allowed: auditTeam && !inactive, who: 'audit-active',
+      done: runs.length > 0,
+      badge: runs.length > 0 ? ['Tested', 'badge-success'] : entryCount > 0 ? ['Ready to run', 'badge-info'] : ['Waiting for upload', 'badge'],
+      text: lastRun ? `Last run ${day(lastRun.run_at)}: ${lastRun.flagged_count} of ${lastRun.total_entries} lines flagged` : 'Run the 7 rules against every uploaded entry',
+    },
+    {
+      href: `/engagements/${id}/history`, title: 'Testing History & Audit Trail',
+      allowed: canSeeTesting, who: 'audit',
+      done: runs.length > 0,
+      badge: runs.length > 0 ? [`${runs.length} run${runs.length === 1 ? '' : 's'}`, 'badge-success'] : ['No runs yet', 'badge'],
+      text: 'Review past runs, who ran them, and what was flagged',
+    },
+    {
+      href: `/reports?engagement=${id}`, title: 'Reports & Sign-off',
+      allowed: true,
+      done: lastReport?.status === 'Signed Off',
+      badge: lastReport ? [lastReport.status, lastReport.status === 'Signed Off' ? 'badge-success' : lastReport.status === 'Returned' ? 'badge-danger' : lastReport.status === 'Draft' ? 'badge' : 'badge-warning'] : ['No report yet', 'badge'],
+      text: reports.length > 1 ? `${reports.length} reports; showing the latest` : 'Prepare reports and follow their sign-off',
+    },
+    {
+      href: `/engagements/${id}/analytics`, title: 'Analytics',
+      allowed: canSeeTesting, who: 'audit',
+      done: false,
+      badge: entryCount > 0 ? ['Live', 'badge-gold'] : ['Waiting for upload', 'badge'],
+      text: 'Dashboard of the entries: trends, weekends, posting lag and more',
+    },
+  ];
+  // The first step not done yet (and usable by this person) is the next one.
+  const nextIndex = steps.findIndex((s) => s.allowed && !s.done && s.title !== 'Analytics' && s.title !== 'Testing History & Audit Trail');
 
   return (
     <div className="page">
@@ -128,13 +183,23 @@ export default function EngagementDetail({ params }) {
         </div>
       ) : null}
 
-      <div className="grid-2">
-        {cards.map((c) => (
-          <Link key={c.href} href={c.href} className="link-card">
-            <h3 className="link-card-title">{c.title}</h3>
-            <p className="link-card-text">{c.text}</p>
-          </Link>
-        ))}
+      <div className="grid-3">
+        {steps.map((st, i) => {
+          const inner = (
+            <>
+              <div className="row-between" style={{ alignItems: 'center', marginBottom: 10 }}>
+                <span className={`step-number${st.done ? ' step-done' : ''}`}>{st.done ? '✓' : i + 1}</span>
+                <span className={`badge ${st.badge[1]}`}>{st.badge[0]}</span>
+              </div>
+              <h3 className="link-card-title">{st.title}</h3>
+              <p className="link-card-text">{st.allowed ? st.text : notAllowed(st.who)}</p>
+              {i === nextIndex && <p className="step-next">Next step</p>}
+            </>
+          );
+          return st.allowed
+            ? <Link key={st.href} href={st.href} className={`link-card${i === nextIndex ? ' step-current' : ''}`}>{inner}</Link>
+            : <div key={st.href} className="link-card step-locked" aria-disabled="true">{inner}</div>;
+        })}
       </div>
     </div>
   );

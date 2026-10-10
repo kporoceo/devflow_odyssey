@@ -33,7 +33,7 @@ export function Avatar({ profile, size = 36 }) {
   );
 }
 
-const PUBLIC_PATHS = ['/login'];
+const PUBLIC_PATHS = ['/login', '/auth/callback'];
 const CLIENT_PATHS = ['/reports', '/account', '/settings', '/change-password'];
 const ADMIN_PATHS = ['/admin', '/account', '/settings', '/change-password'];
 
@@ -137,7 +137,8 @@ export default function AppShell({ children }) {
   useEffect(() => {
     if (target) router.replace(target);
     // Already logged in and on the login page: go home.
-    if (checked && isPublic && profile) router.replace(profile.must_change_password ? '/change-password' : homeFor(profile.role));
+    // (Not on the email-link page: it signs in a different person first.)
+    if (checked && isPublic && profile && pathname !== '/auth/callback') router.replace(profile.must_change_password ? '/change-password' : homeFor(profile.role));
   }, [target, checked, isPublic, profile]);
 
   async function handleLogout() {

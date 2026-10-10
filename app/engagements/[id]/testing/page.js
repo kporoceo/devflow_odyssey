@@ -17,6 +17,59 @@ const STATUS_STYLE = {
   na: { label: 'Not applicable', className: 'badge badge-warning' },
 };
 
+// The uploaded lines, 25 per page, so the page isn't empty before a run.
+const PAGE_SIZE = 25;
+const money = (n) => (Number(n) > 0 ? Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '');
+
+function EntriesTable({ entries }) {
+  const [pageNo, setPageNo] = useState(0);
+  const pages = Math.max(1, Math.ceil(entries.length / PAGE_SIZE));
+  const shown = entries.slice(pageNo * PAGE_SIZE, (pageNo + 1) * PAGE_SIZE);
+  return (
+    <>
+      <div className="table-wrap">
+        <table className="compact" style={{ fontSize: 13 }}>
+          <thead>
+            <tr>
+              <th>JE No.</th>
+              <th>Entry date</th>
+              <th>Account title</th>
+              <th>Description</th>
+              <th className="num">Debit (₱)</th>
+              <th className="num">Credit (₱)</th>
+              <th>Prepared by</th>
+            </tr>
+          </thead>
+          <tbody>
+            {shown.map((e) => (
+              <tr key={e.id}>
+                <td style={{ whiteSpace: 'nowrap' }}>{e.je_number || '—'}</td>
+                <td style={{ whiteSpace: 'nowrap' }}>{e.entry_date}</td>
+                <td>{e.account}</td>
+                <td className="text-2">{e.description}</td>
+                <td className="num">{money(e.debit)}</td>
+                <td className="num">{money(e.credit)}</td>
+                <td className="text-2">{e.entered_by || '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="row-between" style={{ marginTop: 12 }}>
+        <span className="muted small">
+          Lines {(pageNo * PAGE_SIZE + 1).toLocaleString()}–{Math.min((pageNo + 1) * PAGE_SIZE, entries.length).toLocaleString()} of {entries.length.toLocaleString()}
+        </span>
+        <div className="row" style={{ gap: 8 }}>
+          <button onClick={() => setPageNo(0)} disabled={pageNo === 0} className="btn btn-secondary btn-sm">First</button>
+          <button onClick={() => setPageNo(pageNo - 1)} disabled={pageNo === 0} className="btn btn-secondary btn-sm">Previous</button>
+          <span className="small text-2">Page {pageNo + 1} of {pages.toLocaleString()}</span>
+          <button onClick={() => setPageNo(pageNo + 1)} disabled={pageNo >= pages - 1} className="btn btn-secondary btn-sm">Next</button>
+        </div>
+      </div>
+    </>
+  );
+}
+
 export default function RunJETesting({ params }) {
   const { id: engagementId } = params;
   const [entries, setEntries] = useState([]);
@@ -174,9 +227,10 @@ export default function RunJETesting({ params }) {
     return jeOfLine[entry.id] || [entry];
   }
 
-  // Asks the AI about the next 10 flagged lines that don't have a note yet.
-  async function explainNext(sorted) {
-    const todo = sorted.filter((e) => !aiNotes[e.id]).slice(0, 10);
+  // Asks the AI about the next 10 flagged journal entries that don't have a note yet.
+  // Each JE is sent once, as its first flagged line plus the JE's other lines.
+  async function explainNext(groups) {
+    const todo = groups.map((g) => g.rep).filter((e) => !aiNotes[e.id]).slice(0, 10);
     if (todo.length === 0) return;
     setAiBusy(true);
     setAiMessage('');
@@ -201,11 +255,38 @@ export default function RunJETesting({ params }) {
   const flagged = results ? results.filter((r) => r.flags.length > 0) : [];
   const countByRule = {};
   flagged.forEach((r) => r.flags.forEach((f) => { countByRule[f.rule] = (countByRule[f.rule] || 0) + 1; }));
-  // Riskiest first: entries hitting the most rules, post-closing entries on top.
-  const sortedFlagged = [...flagged].sort((a, b) => {
-    const score = (r) => r.flags.length + (r.flags.some((f) => f.reason.startsWith('Post-closing')) ? 1 : 0);
-    return score(b) - score(a);
+  // One review card per journal entry. Most rules flag every line of the JE
+  // (a weekend posting is the same for the debit and the credit), so the
+  // flagged lines of a JE are reviewed together and its repeated flags shown once.
+  const groupMap = new Map();
+  flagged.forEach((line) => {
+    const lines = linesOfSameJE(line);
+    const key = lines[0].id;
+    if (!groupMap.has(key)) groupMap.set(key, { key, lines, flaggedLines: [], flags: [] });
+    const g = groupMap.get(key);
+    g.flaggedLines.push(line);
+    line.flags.forEach((f) => {
+      if (!g.flags.some((x) => x.rule === f.rule && x.reason === f.reason)) g.flags.push(f);
+    });
   });
+  const groups = [...groupMap.values()].map((g) => {
+    const rep = g.flaggedLines[0];
+    const reviewedLine = g.flaggedLines.find((l) => reviews[l.id]);
+    const adjustedLine = g.flaggedLines.find((l) => adjustments[l.id]);
+    return {
+      ...g,
+      rep,
+      review: reviewedLine ? reviews[reviewedLine.id] : undefined,
+      adjustment: adjustedLine ? adjustments[adjustedLine.id] : undefined,
+      amount: g.lines.reduce((sum, l) => sum + Number(l.debit || 0), 0),
+      flagsByLine: Object.fromEntries(g.flaggedLines.map((l) => [l.id, l.flags])),
+    };
+  });
+  // Riskiest first: JEs hitting the most rules, post-closing entries on top.
+  const score = (g) => new Set(g.flags.map((f) => f.rule)).size + (g.flags.some((f) => f.reason.startsWith('Post-closing')) ? 1 : 0);
+  const sortedGroups = groups.sort((a, b) => score(b) - score(a));
+  const reviewedGroups = sortedGroups.filter((g) => g.review).length;
+  const reviewedPct = sortedGroups.length ? Math.round((reviewedGroups / sortedGroups.length) * 100) : 0;
 
   return (
     <div className="page">
@@ -240,12 +321,21 @@ export default function RunJETesting({ params }) {
         </div>
       )}
 
+      {entries.length > 0 && !results && (
+        <div className="card">
+          <h2 className="card-title">Uploaded entries</h2>
+          <p className="card-subtitle" style={{ marginBottom: 16 }}>These are the lines the 7 rules will check. Click <strong>Run JE Testing</strong> when you&apos;re ready.</p>
+          <EntriesTable entries={entries} />
+        </div>
+      )}
+
       {results && (
         <div className="stack-lg">
           <div className="card card-accent row-between">
             <div>
               <p style={{ margin: 0, fontSize: 18 }}>
                 <strong>{flagged.length}</strong> of <strong>{results.length}</strong> entries flagged
+                {flagged.length > 0 && <span className="text-2" style={{ fontSize: 15 }}> · {sortedGroups.length} journal entries to review</span>}
               </p>
               {saveMessage && <p className={`alert ${saveMessage.startsWith('Error') ? 'alert-danger' : 'alert-success'}`} style={{ margin: '12px 0 0' }}>{saveMessage}</p>}
             </div>
@@ -291,16 +381,25 @@ export default function RunJETesting({ params }) {
             <div className="card">
               <h2 className="card-title">Review the flags</h2>
               <p className="card-subtitle">
-                Riskiest first. For each one, pick your decision and write a comment. Claude can explain a flag and draft
-                the comment, but only you decide. {Object.keys(reviews).filter((id) => flagged.some((f) => f.id === id)).length} of {flagged.length} reviewed.
+                Riskiest first, one card per journal entry. For each one, pick your decision and write a comment. Claude can explain a flag and draft
+                the comment, but only you decide.
               </p>
+              <div style={{ margin: '4px 0 20px' }}>
+                <div className="row-between" style={{ marginBottom: 6 }}>
+                  <span className="small text-2"><strong>{reviewedGroups}</strong> of <strong>{sortedGroups.length}</strong> journal entries reviewed</span>
+                  <span className="small text-2">{reviewedPct}%</span>
+                </div>
+                <div className="progress" style={{ height: 8 }}>
+                  <span style={{ width: `${reviewedPct}%`, background: reviewedPct === 100 ? 'var(--success)' : 'var(--primary)' }} />
+                </div>
+              </div>
               <button
-                onClick={() => explainNext(sortedFlagged)}
-                disabled={aiBusy || sortedFlagged.every((e) => aiNotes[e.id])}
+                onClick={() => explainNext(sortedGroups)}
+                disabled={aiBusy || sortedGroups.every((g) => aiNotes[g.rep.id])}
                 className="btn btn-ai"
               >
                 <BusyLabel busy={aiBusy} busyText="Claude is explaining…">
-                  {sortedFlagged.every((e) => aiNotes[e.id]) ? 'Claude explained every flag' : 'Ask Claude to explain the next 10'}
+                  {sortedGroups.every((g) => aiNotes[g.rep.id]) ? 'Claude explained every flag' : 'Ask Claude to explain the next 10'}
                 </BusyLabel>
               </button>
               {aiBusy && <p className="hint" style={{ marginBottom: 0 }}>This can take up to a minute.</p>}
@@ -313,24 +412,23 @@ export default function RunJETesting({ params }) {
             <p className="muted">No entries were flagged under the current testing criteria.</p>
           ) : (
             <div className="stack">
-              {sortedFlagged.map((entry) => (
-                <div key={entry.id} className="card" style={{ borderLeft: '3px solid var(--danger)' }}>
+              {sortedGroups.map((g) => (
+                <div key={g.key} className="card" style={{ borderLeft: `3px solid ${g.review ? 'var(--success)' : 'var(--danger)'}` }}>
                   <div className="row-between" style={{ alignItems: 'baseline' }}>
                     <strong>
-                      <Link href={`/engagements/${engagementId}/entries/${entry.id}`}>{entry.je_number ? `JE ${entry.je_number}` : 'Open JE'}</Link>
-                      {' · '}{entry.account}
+                      <Link href={`/engagements/${engagementId}/entries/${g.rep.id}`}>{g.rep.je_number || 'Open JE'}</Link>
+                      {' · '}{g.rep.description}
                     </strong>
-                    <span className="num" style={{ fontWeight: 500 }}>
-                      {entry.debit > 0 ? `Dr ₱${Number(entry.debit).toLocaleString()}` : `Cr ₱${Number(entry.credit).toLocaleString()}`}
-                    </span>
+                    <span className="num" style={{ fontWeight: 500 }}>₱{g.amount.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                   </div>
                   <p className="text-2 small" style={{ margin: '4px 0 0' }}>
-                    {entry.description} — entered {entry.entry_date}
-                    {entry.effective_date ? `, effective ${entry.effective_date}` : ''}
-                    {entry.entered_by ? `, by ${entry.entered_by}` : ''}
+                    Entered {g.rep.entry_date}
+                    {g.rep.effective_date ? `, effective ${g.rep.effective_date}` : ''}
+                    {g.rep.entered_by ? `, by ${g.rep.entered_by}` : ''}
+                    {` · ${g.flaggedLines.length} of ${g.lines.length} lines flagged`}
                   </p>
                   <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    {entry.flags.map((f, i) => (
+                    {g.flags.map((f, i) => (
                       <div key={i} style={{ fontSize: 13 }}>
                         <span className="badge badge-danger" style={{ marginRight: 8 }}>
                           {RULE_LABELS[f.rule] || f.rule}
@@ -339,20 +437,20 @@ export default function RunJETesting({ params }) {
                       </div>
                     ))}
                   </div>
-                  <details style={{ marginTop: 12 }}>
-                    <summary style={{ fontSize: 13 }}>Show the whole journal entry ({linesOfSameJE(entry).length} lines)</summary>
-                    <div style={{ marginTop: 8 }}><JELines lines={linesOfSameJE(entry)} highlightId={entry.id} /></div>
-                  </details>
+                  <div style={{ marginTop: 12 }}>
+                    <JELines lines={g.lines} flagsByLine={g.flagsByLine} />
+                  </div>
                   <FlagReview
                     engagementId={engagementId}
-                    entry={entry}
-                    jeLines={linesOfSameJE(entry)}
+                    entry={g.rep}
+                    entryIds={g.flaggedLines.map((l) => l.id)}
+                    jeLines={g.lines}
                     accounts={[...new Set(entries.map((e) => e.account))]}
-                    note={aiNotes[entry.id]}
-                    review={reviews[entry.id]}
-                    adjustment={adjustments[entry.id]}
-                    onReviewSaved={(row) => setReviews((prev) => ({ ...prev, [entry.id]: row }))}
-                    onAdjustmentSaved={(row) => setAdjustments((prev) => ({ ...prev, [entry.id]: row }))}
+                    note={aiNotes[g.rep.id]}
+                    review={g.review}
+                    adjustment={g.adjustment}
+                    onReviewSaved={(rows) => setReviews((prev) => ({ ...prev, ...Object.fromEntries(rows.map((r) => [r.journal_entry_id, r])) }))}
+                    onAdjustmentSaved={(row) => setAdjustments((prev) => ({ ...prev, [g.rep.id]: row }))}
                   />
                 </div>
               ))}

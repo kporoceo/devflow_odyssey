@@ -24,7 +24,7 @@ export default function JELines({ lines, highlightId, flagsByLine = {} }) {
           {lines.map((l) => {
             const flagged = l.id === highlightId || (flagsByLine[l.id] || []).length > 0;
             return (
-              <tr key={l.id} className={l.id === highlightId ? 'row-flagged' : undefined}>
+              <tr key={l.id} className={flagged ? 'row-flagged' : undefined}>
                 <td style={{ paddingLeft: Number(l.credit) > 0 ? 28 : undefined }}>
                   {l.account}
                   {flagged && <span className="badge badge-danger" style={{ fontSize: 11, marginLeft: 8 }}>flagged</span>}

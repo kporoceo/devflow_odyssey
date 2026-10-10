@@ -25,6 +25,30 @@ function Rule({ number, title, field, criteria, updateField, hint, children }) {
   );
 }
 
+// Peso amounts with thousands commas (1,000,000). Only digits and one dot are
+// kept, so the saved value is still a plain number.
+function withCommas(text) {
+  const [whole, ...rest] = String(text).replace(/[^0-9.]/g, '').split('.');
+  const grouped = whole.replace(/^0+(?=\d)/, '').replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return rest.length ? `${grouped}.${rest.join('').slice(0, 2)}` : grouped;
+}
+
+function PesoInput({ field, criteria, updateField, width = 160 }) {
+  const value = criteria[field];
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      value={value === null || value === undefined ? '' : withCommas(value)}
+      onChange={(e) => {
+        const text = withCommas(e.target.value);
+        updateField(field, text === '' ? null : (text.endsWith('.') ? text.replace(/,/g, '') : Number(text.replace(/,/g, ''))));
+      }}
+      style={{ width, textAlign: 'right' }}
+    />
+  );
+}
+
 function NumberInput({ field, criteria, updateField, width = 100, step = 'any' }) {
   return (
     <input
@@ -154,16 +178,16 @@ export default function TestingCriteria({ params }) {
           hint="Flag round amounts at or above the clearly trivial threshold, which is about 5% of materiality.">
           <div style={rowStyle}>
             <span>Overall materiality: ₱</span>
-            <NumberInput field="materiality" width={160} {...ruleProps} />
+            <PesoInput field="materiality" width={160} {...ruleProps} />
             <button type="button" onClick={applyFivePercent} className="btn btn-secondary btn-sm">Use 5% as threshold</button>
           </div>
           <div style={rowStyle}>
             <span>Flag amounts at or above: ₱</span>
-            <NumberInput field="round_min_amount" width={160} {...ruleProps} />
+            <PesoInput field="round_min_amount" width={160} {...ruleProps} />
           </div>
           <div style={rowStyle}>
             <span>&quot;Round&quot; means an exact multiple of: ₱</span>
-            <NumberInput field="round_multiple" width={120} {...ruleProps} />
+            <PesoInput field="round_multiple" width={120} {...ruleProps} />
           </div>
         </Rule>
 
