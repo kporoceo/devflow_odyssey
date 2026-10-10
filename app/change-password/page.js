@@ -26,7 +26,7 @@ export default function ChangePassword() {
 
     const missing = missingRules(password);
     if (missing.length > 0) {
-      setError(`Your password still needs: ${missing.join(', ').toLowerCase()}.`);
+      setError(`Your password still needs: ${missing.map((r) => r.charAt(0).toLowerCase() + r.slice(1)).join(', ')}.`);
       return;
     }
     if (password !== confirm) {

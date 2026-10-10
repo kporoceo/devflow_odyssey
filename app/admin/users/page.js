@@ -221,7 +221,7 @@ export default function ManageUsers() {
                     <td>
                       <div className="row" style={{ gap: 6 }}>
                         <span className={u.is_active ? 'badge badge-success' : 'badge'}>{u.is_active ? 'Active' : 'Deactivated'}</span>
-                        {u.is_active && u.must_change_password && <span className="badge badge-warning">Still on default password</span>}
+                        {u.is_active && u.must_change_password && <span className="badge badge-warning">Hasn&apos;t set own password yet</span>}
                       </div>
                     </td>
                     <td style={{ whiteSpace: 'nowrap' }}>

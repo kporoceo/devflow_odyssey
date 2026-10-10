@@ -19,12 +19,20 @@ function callbackUrl(request) {
 
 // Supabase's built-in email only reaches the project's own team; anyone else
 // needs custom SMTP. Turn its error into something the administrator can act on.
-function emailError(error) {
+function emailError(error, fallback) {
   const text = error.message || '';
   if (/not authorized|rate limit|smtp|sending/i.test(text)) {
-    return `The email couldn't be sent (${text}). Set up custom SMTP in Supabase, or untick "Email them a link" to get a default password instead.`;
+    return `The email couldn't be sent (${text}). Set up custom SMTP in Supabase, or ${fallback}.`;
   }
   return text;
+}
+
+// If Supabase made the account but couldn't send the invite, remove that
+// half-made account so the administrator can simply try again.
+async function removeUnsentInvite(admin, email) {
+  const { data } = await admin.auth.admin.listUsers({ perPage: 1000 });
+  const stuck = (data?.users || []).find((u) => u.email === email && !u.last_sign_in_at && !u.email_confirmed_at);
+  if (stuck) await admin.auth.admin.deleteUser(stuck.id);
 }
 
 function fail(message, status = 400) {
@@ -89,7 +97,19 @@ export async function POST(request) {
         data: { full_name: fullName },
         redirectTo: callbackUrl(request),
       });
-      if (error) return fail(/already/i.test(error.message) ? 'An account with this email already exists.' : emailError(error));
+      if (error) {
+        if (/already/i.test(error.message)) {
+          // Left over from an earlier invite that failed to send? Clear it so the next try works.
+          const { data: existing } = await admin.from('profiles').select('id').eq('email', email).maybeSingle();
+          if (!existing) {
+            await removeUnsentInvite(admin, email);
+            return fail('An earlier invite for this email never finished. It has been cleared: click Create account again.');
+          }
+          return fail('An account with this email already exists.');
+        }
+        await removeUnsentInvite(admin, email);
+        return fail(emailError(error, 'untick "Email them a link" to get a default password instead'));
+      }
       created = data;
     } else {
       password = defaultPassword();
@@ -148,7 +168,7 @@ export async function POST(request) {
     const { data: target } = await admin.from('profiles').select('email').eq('id', userId).single();
     if (!target?.email) return fail('This account has no email address.');
     const { error } = await admin.auth.resetPasswordForEmail(target.email, { redirectTo: callbackUrl(request) });
-    if (error) return fail(emailError(error));
+    if (error) return fail(emailError(error, 'click "Reset password" to get a default password instead'));
     await admin.from('profiles').update({ must_change_password: true }).eq('id', userId);
     return NextResponse.json({ emailed: target.email });
   }
