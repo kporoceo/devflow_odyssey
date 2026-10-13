@@ -8,11 +8,23 @@ import { BackLink, Spinner } from '../../components/ui';
 
 const NEW_CLIENT = 'new';
 
-// Engagements grouped under their client, A to Z by client name.
-function ClientGroups({ items, onAdd }) {
+const SORTS = {
+  az: { label: 'Client A to Z', compare: (a, b) => a.name.localeCompare(b.name) },
+  za: { label: 'Client Z to A', compare: (a, b) => b.name.localeCompare(a.name) },
+  newest: { label: 'Newest engagement first', compare: (a, b) => b.latest.localeCompare(a.latest) },
+  most: { label: 'Most engagements first', compare: (a, b) => b.items.length - a.items.length || a.name.localeCompare(b.name) },
+};
+
+// Engagements grouped under their client, newest engagement first in each.
+function ClientGroups({ items, sort, onAdd }) {
   const groups = {};
-  items.forEach((eng) => { (groups[eng.client_id] ||= { name: eng.client_name || '', items: [] }).items.push(eng); });
-  const sorted = Object.entries(groups).sort((a, b) => a[1].name.localeCompare(b[1].name));
+  items.forEach((eng) => {
+    const g = (groups[eng.client_id] ||= { name: eng.client_name || '', items: [], latest: '' });
+    g.items.push(eng);
+    if ((eng.created_at || '') > g.latest) g.latest = eng.created_at || '';
+  });
+  Object.values(groups).forEach((g) => g.items.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || '')));
+  const sorted = Object.entries(groups).sort((a, b) => SORTS[sort].compare(a[1], b[1]));
   return (
     <div className="stack" style={{ gap: 28 }}>
       {sorted.map(([clientId, g]) => (
@@ -83,8 +95,15 @@ export default function Engagements() {
     init();
   }, []);
 
-  const active = engagements.filter((e) => e.status !== 'Inactive');
-  const inactive = engagements.filter((e) => e.status === 'Inactive');
+  // Search, sort and filter for the list on the right.
+  const [search, setSearch] = useState('');
+  const [sort, setSort] = useState('az');
+  const [show, setShow] = useState('Active');
+  const term = search.trim().toLowerCase();
+  const shown = engagements.filter((e) =>
+    (show === 'All' || (show === 'Inactive' ? e.status === 'Inactive' : e.status !== 'Inactive'))
+    && (!term || (e.client_name || '').toLowerCase().includes(term) || (e.engagement_name || '').toLowerCase().includes(term)));
+  const clientCount = new Set(shown.map((e) => e.client_id)).size;
 
   async function handleCreate(e) {
     e.preventDefault();
@@ -185,21 +204,37 @@ export default function Engagements() {
         </form>
         
         <div className="stack">
-          <h2>Active engagements</h2>
+          <h2>Engagements</h2>
+          <div className="row" style={{ gap: 10, flexWrap: 'wrap' }}>
+            <input
+              type="search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search client or engagement"
+              aria-label="Search client or engagement"
+              style={{ flex: '1 1 220px', width: 'auto' }}
+            />
+            <select value={sort} onChange={(e) => setSort(e.target.value)} aria-label="Sort" style={{ width: 'auto' }}>
+              {Object.entries(SORTS).map(([key, s]) => <option key={key} value={key}>{s.label}</option>)}
+            </select>
+            <select value={show} onChange={(e) => setShow(e.target.value)} aria-label="Show" style={{ width: 'auto' }}>
+              <option value="Active">Active only</option>
+              <option value="Inactive">Inactive only</option>
+              <option value="All">Active and Inactive</option>
+            </select>
+          </div>
+          {!loading && (
+            <p className="muted small" style={{ margin: 0 }}>
+              {clientCount} client{clientCount === 1 ? '' : 's'}, {shown.length} engagement{shown.length === 1 ? '' : 's'}
+              {show !== 'Active' && ' · Inactive engagements are read-only: no new uploads or test runs. Firm Leadership can reactivate them.'}
+            </p>
+          )}
           {loading ? (
             <p className="loading" style={{ padding: 0 }}><Spinner /> Loading…</p>
-          ) : active.length === 0 ? (
-            <p className="muted">No active engagements. Create one with the form.</p>
+          ) : shown.length === 0 ? (
+            <p className="muted">{term ? `No client or engagement matches "${search.trim()}".` : `No ${show === 'All' ? '' : show.toLowerCase() + ' '}engagements. Create one with the form.`}</p>
           ) : (
-            <ClientGroups items={active} onAdd={addFor} />
-          )}
-
-          {inactive.length > 0 && (
-            <details style={{ marginTop: 40 }}>
-              <summary style={{ fontWeight: 600 }}>Inactive engagements ({inactive.length})</summary>
-              <p className="muted" style={{ fontSize: 14, margin: '12px 0 16px' }}>Read-only: no new uploads or test runs. Firm Leadership can reactivate them.</p>
-              <ClientGroups items={inactive} />
-            </details>
+            <ClientGroups items={shown} sort={sort} onAdd={addFor} />
           )}
         </div>
       </div>
