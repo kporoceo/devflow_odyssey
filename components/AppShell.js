@@ -62,6 +62,8 @@ function redirectFor(profile, path) {
   // JE testing pages: Audit Team only. Testing history, Analytics and the JE detail page: Audit Team and Firm Leadership.
   if (/^\/engagements\/[^/]+\/(upload|criteria|testing)/.test(path) && !isAuditTeam(profile.role)) return '/dashboard';
   if (/^\/engagements\/[^/]+\/(history|analytics|entries)/.test(path) && !isAuditTeam(profile.role) && !isLeadership(profile.role)) return '/dashboard';
+  // Account Activity log: Firm Leadership only (Part M).
+  if (path.startsWith('/activity') && !isLeadership(profile.role)) return '/dashboard';
   return null;
 }
 
@@ -85,6 +87,7 @@ function navItems(role) {
     { href: '/engagements', label: 'Engagements' },
     { href: '/reports', label: 'Reports' },
   ];
+  if (isLeadership(role)) items.push({ href: '/activity', label: 'Account Activity' });
   items.push({ href: '/account', label: 'My Account' }, { href: '/settings', label: 'Settings' });
   return items;
 }

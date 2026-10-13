@@ -129,6 +129,81 @@ function parseDateCell(value) {
   return `${parsed.getFullYear()}-${pad(parsed.getMonth() + 1)}-${pad(parsed.getDate())}`;
 }
 
+function when(d) {
+  return new Date(d).toLocaleString('en-PH', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+
+// Every upload to this engagement. An upload can be removed (with its lines)
+// until a saved test run has used it; the database checks this again.
+function UploadHistory({ uploads, lastRunAt, inactive, busyId, onRemove }) {
+  if (uploads.length === 0) return null;
+  const total = uploads.reduce((sum, u) => sum + (u.row_count || 0), 0);
+  return (
+    <div className="card" style={{ marginBottom: 24 }}>
+      <h3 className="card-title">Uploads for this engagement</h3>
+      <p className="card-subtitle">
+        {uploads.length} upload{uploads.length === 1 ? '' : 's'}, {total.toLocaleString()} lines in all. A new file is <strong>added</strong> to these
+        (for example, another month or another ledger). If a file was uploaded by mistake, remove it before running the test.
+      </p>
+      <div className="table-wrap">
+        <table className="compact">
+          <thead>
+            <tr>
+              <th>File</th>
+              <th style={{ textAlign: 'right' }}>Lines and totals</th>
+              <th>Uploaded by</th>
+              <th>When</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {uploads.map((u) => {
+              const used = lastRunAt && new Date(lastRunAt) >= new Date(u.uploaded_at);
+              return (
+                <tr key={u.id}>
+                  <td style={{ verticalAlign: 'middle' }}>
+                    {u.file_name}
+                    {u.sheet_name && <span className="muted small"> · {u.sheet_name}</span>}
+                    {u.file_sha256 && <div className="muted small" title={u.file_sha256}>Fingerprint <code>{u.file_sha256.slice(0, 10)}…</code></div>}
+                  </td>
+                  <td style={{ textAlign: 'right', verticalAlign: 'middle' }}>
+                    {(u.row_count || 0).toLocaleString()} lines
+                    {u.total_debit != null && (
+                      <div className="muted small" style={{ whiteSpace: 'nowrap' }}>Dr {peso(u.total_debit)}<br />Cr {peso(u.total_credit)}</div>
+                    )}
+                  </td>
+                  <td style={{ verticalAlign: 'middle' }}>{u.uploader || '—'}</td>
+                  <td style={{ verticalAlign: 'middle', whiteSpace: 'nowrap' }}>{when(u.uploaded_at)}</td>
+                  <td style={{ textAlign: 'right', verticalAlign: 'middle' }}>
+                    {used ? (
+                      <span className="muted small" style={{ whiteSpace: 'nowrap' }}>Used in a test run</span>
+                    ) : !inactive && (
+                      <button type="button" onClick={() => onRemove(u)} disabled={!!busyId} className="btn btn-danger-outline btn-sm">
+                        <BusyLabel busy={busyId === u.id} busyText="Removing…">Remove</BusyLabel>
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// Biggest file accepted. A 3,000-line ledger is under 1 MB, so this is generous;
+// it stops someone from freezing the page with a huge or broken file.
+const MAX_FILE_MB = 20;
+
+// The file's SHA-256 fingerprint: changes if even one character of the file
+// changes, so it proves later exactly which file was tested.
+async function fingerprint(file) {
+  const digest = await crypto.subtle.digest('SHA-256', await file.arrayBuffer());
+  return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
 function peso(n) {
   return `₱${Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
@@ -142,9 +217,12 @@ export default function UploadJEData({ params }) {
   const [sheets, setSheets] = useState([]);         // Excel only: [{ name, rows }]
   const [sheetName, setSheetName] = useState('');
   const [inactive, setInactive] = useState(false);
-  const [existingCount, setExistingCount] = useState(0); // lines already uploaded to this engagement
+  const [uploads, setUploads] = useState([]);      // earlier uploads to this engagement
+  const [lastRunAt, setLastRunAt] = useState(null);  // newest saved test run
+  const [removing, setRemoving] = useState('');
   const [headerRow, setHeaderRow] = useState(1);
   const workbookRef = useRef(null);
+  const fileHashRef = useRef(null);
   const [mapping, setMapping] = useState({});        // ODYSSEY field -> client's column name
   const [mappingByAI, setMappingByAI] = useState(false);
   const [parsedRows, setParsedRows] = useState([]);
@@ -163,11 +241,36 @@ export default function UploadJEData({ params }) {
         setClientName(data?.client_name || '');
         setInactive(data?.status === 'Inactive');
       });
-    supabase.from('journal_entries').select('*', { count: 'exact', head: true }).eq('engagement_id', engagementId)
-      .then(({ count }) => setExistingCount(count || 0));
+    loadUploads();
   }, [engagementId]);
 
-  function handleFileChange(e) {
+  async function loadUploads() {
+    const [{ data: list }, { data: runs }] = await Promise.all([
+      supabase.from('je_uploads').select('*').eq('engagement_id', engagementId).order('uploaded_at', { ascending: false }),
+      supabase.from('je_test_results').select('run_at').eq('engagement_id', engagementId).order('run_at', { ascending: false }).limit(1),
+    ]);
+    const ids = [...new Set((list || []).map((u) => u.uploaded_by).filter(Boolean))];
+    const { data: people } = ids.length
+      ? await supabase.from('profiles').select('id, full_name').in('id', ids)
+      : { data: [] };
+    const names = Object.fromEntries((people || []).map((p) => [p.id, p.full_name]));
+    setUploads((list || []).map((u) => ({ ...u, uploader: names[u.uploaded_by] })));
+    setLastRunAt(runs?.[0]?.run_at || null);
+  }
+
+  async function removeUpload(u) {
+    if (!confirm(`Remove "${u.file_name}" and its ${(u.row_count || 0).toLocaleString()} lines from this engagement?`)) return;
+    setRemoving(u.id);
+    const { error } = await supabase.rpc('remove_upload', { p_id: u.id });
+    setRemoving('');
+    if (error) {
+      alert(error.message);
+      return;
+    }
+    loadUploads();
+  }
+
+  async function handleFileChange(e) {
     const file = e.target.files[0];
     if (!file) return;
 
@@ -190,6 +293,21 @@ export default function UploadJEData({ params }) {
       setValidationErrors([
         `".${ext}" files aren't supported. Please upload a CSV (.csv) or Excel (.xlsx, .xls) file.`,
       ]);
+      setStatus('error');
+      return;
+    }
+
+    if (file.size > MAX_FILE_MB * 1024 * 1024) {
+      setValidationErrors([`This file is ${(file.size / 1024 / 1024).toFixed(1)} MB. The limit is ${MAX_FILE_MB} MB; split the ledger by month and upload each part.`]);
+      setStatus('error');
+      return;
+    }
+
+    // Fingerprint the file first, and stop if this exact file is already in the engagement.
+    fileHashRef.current = await fingerprint(file);
+    const same = uploads.find((u) => u.file_sha256 === fileHashRef.current);
+    if (same) {
+      setValidationErrors([`This exact file was already uploaded to this engagement (${same.file_name}, ${when(same.uploaded_at)}). Uploading it again would count its entries twice.`]);
       setStatus('error');
       return;
     }
@@ -421,10 +539,17 @@ export default function UploadJEData({ params }) {
     setSaveMessage(foundHeaderRow > 1 ? `Column headings found on row ${foundHeaderRow}; the ${foundHeaderRow - 1} title row(s) above them were skipped.` : '');
 
     // Step 3: the account type of every account. Taken from the file if it
-    // has a valid one, else from this engagement's saved list, else a guess
-    // from the name. The person can change any of them, or ask the AI.
-    const { data: saved } = await fetchAll(() => supabase.from('account_classes').select('account, class').eq('engagement_id', engagementId).order('account'));
-    const savedMap = Object.fromEntries((saved || []).map((a) => [a.account, a.class]));
+    // has a valid one, else from the types already confirmed for this client
+    // (this engagement first, then the client's other engagements, newest
+    // first), else a guess from the name. The person can change any of them, or ask the AI.
+    const { data: eng } = await supabase.from('engagements').select('client_id').eq('id', engagementId).single();
+    const { data: siblings } = await supabase.from('engagements').select('id').eq('client_id', eng?.client_id);
+    const ids = (siblings || []).map((x) => x.id);
+    if (!ids.includes(engagementId)) ids.push(engagementId);
+    const { data: saved } = await fetchAll(() => supabase.from('account_classes').select('account, class, engagement_id, updated_at').in('engagement_id', ids).order('updated_at'));
+    const savedMap = {};
+    (saved || []).filter((a) => a.engagement_id !== engagementId).forEach((a) => { savedMap[a.account] = a.class; });
+    (saved || []).filter((a) => a.engagement_id === engagementId).forEach((a) => { savedMap[a.account] = a.class; });
     const classes = {};
     cleanRows.forEach((r) => {
       if (classes[r.account]) return;
@@ -462,11 +587,7 @@ export default function UploadJEData({ params }) {
   async function handleConfirmSave() {
     setStatus('saving');
     const { data: { user } } = await supabase.auth.getUser();
-    const rowsWithUploader = parsedRows.map((r) => ({
-      ...r,
-      account_class: accountClasses[r.account]?.class || null,
-      uploaded_by: user.id,
-    }));
+    let uploadId = null;
 
     const BATCH_SIZE = 500;
     try {
@@ -486,14 +607,46 @@ export default function UploadJEData({ params }) {
         if (error) throw error;
       }
 
+      // Record the upload with its fingerprint and control totals, then save its lines under it.
+      const cents = (field) => parsedRows.reduce((sum, r) => sum + Math.round((Number(r[field]) || 0) * 100), 0) / 100;
+      const { data: upload, error: uploadError } = await supabase
+        .from('je_uploads')
+        .insert({
+          engagement_id: engagementId, file_name: fileName, sheet_name: sheets.length > 1 ? sheetName : null,
+          row_count: parsedRows.length, uploaded_by: user.id,
+          file_sha256: fileHashRef.current, total_debit: cents('debit'), total_credit: cents('credit'),
+        })
+        .select('id')
+        .single();
+      if (uploadError) {
+        if (uploadError.code === '23505') throw new Error('This exact file was already uploaded to this engagement, so nothing was saved.');
+        throw uploadError;
+      }
+      uploadId = upload.id;
+
+      const rowsWithUploader = parsedRows.map((r) => ({
+        ...r,
+        account_class: accountClasses[r.account]?.class || null,
+        uploaded_by: user.id,
+        upload_id: uploadId,
+      }));
       for (let i = 0; i < rowsWithUploader.length; i += BATCH_SIZE) {
         const batch = rowsWithUploader.slice(i, i + BATCH_SIZE);
         const { error } = await supabase.from('journal_entries').insert(batch);
         if (error) throw error;
       }
-      setSaveMessage(`Successfully saved ${rowsWithUploader.length} journal entries.`);
+      // Integrity check: read back what the database stored and compare it with the file.
+      const { data: stored } = await fetchAll(() => supabase.from('journal_entries').select('debit, credit').eq('upload_id', uploadId).order('id'));
+      const storedCents = (field) => (stored || []).reduce((sum, r) => sum + Math.round((Number(r[field]) || 0) * 100), 0) / 100;
+      if ((stored || []).length !== rowsWithUploader.length || storedCents('debit') !== cents('debit') || storedCents('credit') !== cents('credit')) {
+        throw new Error(`The saved lines don't match the file (${(stored || []).length} of ${rowsWithUploader.length} lines). Nothing was kept; please upload it again.`);
+      }
+      setSaveMessage(`Successfully saved ${rowsWithUploader.length} journal entries. Checked: ${(stored || []).length.toLocaleString()} lines, debits ${peso(cents('debit'))} and credits ${peso(cents('credit'))} match the file.`);
       setStatus('done');
+      loadUploads();
     } catch (err) {
+      // Don't leave half an upload behind.
+      if (uploadId) await supabase.rpc('remove_upload', { p_id: uploadId });
       setValidationErrors([`Save failed: ${err.message}`]);
       setStatus('error');
     }
@@ -523,13 +676,7 @@ export default function UploadJEData({ params }) {
           This engagement is <strong>Inactive</strong>, so new entries can&apos;t be uploaded. Firm Leadership can reactivate it.
         </p>
       )}
-      {!inactive && existingCount > 0 && (
-        <p className="alert alert-info" style={{ marginBottom: 24 }}>
-          This engagement already has <strong>{existingCount.toLocaleString()}</strong> uploaded lines. You can upload more than once:
-          a new file is <strong>added</strong> to them (for example, another month or another ledger). Don&apos;t upload the same file twice,
-          or its entries will be counted twice.
-        </p>
-      )}
+      <UploadHistory uploads={uploads} lastRunAt={lastRunAt} inactive={inactive} busyId={removing} onRemove={removeUpload} />
 
       <div className="stack-lg">
       <div className="card card-accent">

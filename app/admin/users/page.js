@@ -6,14 +6,14 @@ import { useProfile } from '../../../components/AppShell';
 import { ALL_ROLES, CLIENT_ROLE, teamOf } from '../../../lib/roles';
 import { BusyLabel } from '../../../components/ui';
 
-const EMPTY_FORM = { full_name: '', email: '', role: 'Audit Associate', client_engagement_id: '', send_email: true };
+const EMPTY_FORM = { full_name: '', email: '', role: 'Audit Associate', client_id: '', send_email: true };
 
 export default function ManageUsers() {
   const { profile } = useProfile();
   const [users, setUsers] = useState([]);
-  const [engagements, setEngagements] = useState([]);
+  const [clients, setClients] = useState([]);
   const [form, setForm] = useState(EMPTY_FORM);
-  const [edits, setEdits] = useState({}); // { [userId]: { role, client_engagement_id } }
+  const [edits, setEdits] = useState({}); // { [userId]: { role, client_id } }
   const [notice, setNotice] = useState(null); // { text, password? }
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState('');
@@ -21,7 +21,7 @@ export default function ManageUsers() {
   const supabase = createClient();
 
   // The list comes from the server route, because the System Administrator
-  // can't read engagements directly (they have no access to audit data).
+  // can't read audit data directly; it only gets the client names.
   async function load() {
     const { data: { session } } = await supabase.auth.getSession();
     const res = await fetch('/api/admin/users', {
@@ -35,7 +35,7 @@ export default function ManageUsers() {
       return;
     }
     setUsers(result.users);
-    setEngagements(result.engagements);
+    setClients(result.clients);
   }
 
   useEffect(() => { load(); }, []);
@@ -102,9 +102,9 @@ export default function ManageUsers() {
     if (result) setNotice({ text: `${user.full_name || user.email} was ${user.is_active ? 'deactivated' : 'reactivated'}.` });
   }
 
-  const engagementLabel = (id) => {
-    const eng = engagements.find((x) => x.id === id);
-    return eng ? `${eng.client_name} — ${eng.engagement_name}` : '';
+  const clientLabel = (id) => {
+    const c = clients.find((x) => x.id === id);
+    return c ? c.name : '';
   };
 
   const fieldInput = { marginTop: 6 };
@@ -130,10 +130,10 @@ export default function ManageUsers() {
               </select>
             </label>
             {form.role === CLIENT_ROLE && (
-              <label style={{ marginBottom: 0 }}>Client&apos;s engagement
-                <select style={fieldInput} value={form.client_engagement_id} onChange={(e) => setForm({ ...form, client_engagement_id: e.target.value })} required>
+              <label style={{ marginBottom: 0 }}>Client
+                <select style={fieldInput} value={form.client_id} onChange={(e) => setForm({ ...form, client_id: e.target.value })} required>
                   <option value="">Choose…</option>
-                  {engagements.map((eng) => <option key={eng.id} value={eng.id}>{eng.client_name} — {eng.engagement_name}</option>)}
+                  {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
               </label>
             )}
@@ -196,7 +196,7 @@ export default function ManageUsers() {
                           <div className="row" style={{ gap: 8, flexWrap: 'nowrap' }}>
                             <select
                               value={edit?.role ?? u.role}
-                              onChange={(e) => setEdits({ ...edits, [u.id]: { role: e.target.value, client_engagement_id: edit?.client_engagement_id ?? u.client_engagement_id ?? '' } })}
+                              onChange={(e) => setEdits({ ...edits, [u.id]: { role: e.target.value, client_id: edit?.client_id ?? u.client_id ?? '' } })}
                               style={{ width: 'auto', minWidth: 180, minHeight: 32, padding: '5px 10px', fontSize: 13 }}
                             >
                               {ALL_ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
@@ -206,14 +206,14 @@ export default function ManageUsers() {
                           {(edit?.role ?? u.role) === CLIENT_ROLE && (
                             edit ? (
                               <select
-                                value={edit.client_engagement_id || ''}
-                                onChange={(e) => setEdits({ ...edits, [u.id]: { ...edit, client_engagement_id: e.target.value } })}
+                                value={edit.client_id || ''}
+                                onChange={(e) => setEdits({ ...edits, [u.id]: { ...edit, client_id: e.target.value } })}
                                 style={{ width: 'auto', minWidth: 180, minHeight: 32, padding: '5px 10px', fontSize: 13, display: 'block', marginTop: 6 }}
                               >
-                                <option value="">Choose engagement…</option>
-                                {engagements.map((eng) => <option key={eng.id} value={eng.id}>{eng.client_name} — {eng.engagement_name}</option>)}
+                                <option value="">Choose client…</option>
+                                {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                               </select>
-                            ) : <div className="small muted" style={{ marginTop: 6 }}>{engagementLabel(u.client_engagement_id) || 'No engagement'}</div>
+                            ) : <div className="small muted" style={{ marginTop: 6 }}>{clientLabel(u.client_id) || 'No client'}</div>
                           )}
                         </>
                       )}

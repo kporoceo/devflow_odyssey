@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '../../../../lib/supabaseClient';
 import { DEFAULT_CRITERIA } from '../../../../lib/jeTesting';
+import { loadCriteria, mergeCriteria } from '../../../../lib/criteria';
 import { BackLink, BusyLabel, Spinner } from '../../../../components/ui';
 
 const sectionStyle = { borderTop: '1px solid var(--border)', paddingTop: 20 };
@@ -66,6 +67,8 @@ export default function TestingCriteria({ params }) {
   const { id: engagementId } = params;
   const [criteria, setCriteria] = useState(DEFAULT_CRITERIA);
   const [holidayCount, setHolidayCount] = useState(0);
+  const [saved, setSaved] = useState({ own: null, client: null, clientId: null, clientName: '' });
+  const [scope, setScope] = useState('client'); // 'client' = all of the client's engagements, 'engagement' = this one only
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [savedMessage, setSavedMessage] = useState('');
@@ -80,21 +83,11 @@ export default function TestingCriteria({ params }) {
         return;
       }
 
-      const { data } = await supabase
-        .from('testing_criteria')
-        .select('*')
-        .eq('engagement_id', engagementId)
-        .single();
-
-      if (data) {
-        // Keep only the settings this page edits; fall back to the default
-        // for any column that is still empty.
-        const merged = { ...DEFAULT_CRITERIA };
-        Object.keys(DEFAULT_CRITERIA).forEach((key) => {
-          if (data[key] !== null && data[key] !== undefined) merged[key] = data[key];
-        });
-        setCriteria(merged);
-      }
+      // The engagement's own criteria, else its client's, else the defaults.
+      const found = await loadCriteria(supabase, engagementId);
+      setSaved(found);
+      setScope(found.source === 'engagement' ? 'engagement' : 'client');
+      setCriteria(found.criteria);
 
       const { count } = await supabase.from('holidays').select('*', { count: 'exact', head: true });
       setHolidayCount(count || 0);
@@ -108,6 +101,14 @@ export default function TestingCriteria({ params }) {
     setSavedMessage('');
   }
 
+  // Switching shows the settings saved for that choice. A new engagement-only
+  // set starts from the client's settings.
+  function switchScope(next) {
+    setScope(next);
+    setSavedMessage('');
+    setCriteria(mergeCriteria(next === 'client' ? saved.client : (saved.own || saved.client)));
+  }
+
   // Clearly trivial threshold = about 5% of overall materiality (PSA 320 practice).
   function applyFivePercent() {
     if (!(criteria.materiality > 0)) return;
@@ -119,24 +120,33 @@ export default function TestingCriteria({ params }) {
     setSaving(true);
     const { data: { user } } = await supabase.auth.getUser();
 
-    // upsert = insert if no row exists yet for this engagement, otherwise update.
-    // This works because engagement_id has a UNIQUE constraint in the schema.
-    const { error } = await supabase
-      .from('testing_criteria')
-      .upsert(
-        {
-          engagement_id: engagementId,
-          ...criteria,
-          updated_by: user.id,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'engagement_id' }
-      );
+    const stamp = { ...criteria, updated_by: user.id, updated_at: new Date().toISOString() };
+    let error;
+
+    if (scope === 'engagement') {
+      // Insert or update this engagement's override (engagement_id is unique).
+      ({ error } = await supabase
+        .from('testing_criteria')
+        .upsert({ engagement_id: engagementId, ...stamp }, { onConflict: 'engagement_id' }));
+    } else {
+      // The client's criteria: update the client's row, or create it the first time.
+      ({ error } = saved.client
+        ? await supabase.from('testing_criteria').update(stamp).eq('id', saved.client.id)
+        : await supabase.from('testing_criteria').insert({ client_id: saved.clientId, ...stamp }));
+      // Saving for the client means this engagement follows the client again.
+      if (!error && saved.own) {
+        ({ error } = await supabase.from('testing_criteria').delete().eq('id', saved.own.id));
+      }
+    }
 
     if (error) {
       setSavedMessage(`Error: ${error.message}`);
     } else {
-      setSavedMessage('Testing criteria saved.');
+      const found = await loadCriteria(supabase, engagementId);
+      setSaved(found);
+      setSavedMessage(scope === 'client'
+        ? `Saved for all ${saved.clientName} engagements. This engagement uses them.`
+        : `Saved for this engagement only. Other ${saved.clientName} engagements keep the client's criteria.`);
     }
     setSaving(false);
   }
@@ -151,11 +161,32 @@ export default function TestingCriteria({ params }) {
       <div className="page-header">
         <div>
           <h1 className="page-title">Configure Testing Criteria</h1>
-          <p className="page-subtitle">These 7 rules decide which journal entries get flagged for this engagement. Uncheck a rule to skip it.</p>
+          <p className="page-subtitle">These 7 rules decide which journal entries get flagged. Set them once for the client; every engagement of the client uses them unless it has its own. Uncheck a rule to skip it.</p>
         </div>
       </div>
 
       <form onSubmit={handleSave} className="card stack-lg">
+
+        <div>
+          <p style={{ fontWeight: 600, fontSize: 15, margin: '0 0 10px' }}>Save these criteria for</p>
+          <label style={rowStyle}>
+            <input type="radio" name="scope" checked={scope === 'client'} onChange={() => switchScope('client')} />
+            <span>All of <strong>{saved.clientName}</strong>&apos;s engagements (recommended)</span>
+          </label>
+          <label style={rowStyle}>
+            <input type="radio" name="scope" checked={scope === 'engagement'} onChange={() => switchScope('engagement')} />
+            This engagement only (when it needs different settings)
+          </label>
+          <p className="hint" style={{ margin: '4px 0 0' }}>
+            {saved.own
+              ? scope === 'client'
+                ? `This engagement has its own criteria. Saving for the client removes them, and this engagement uses the client's criteria again.`
+                : 'This engagement uses its own criteria.'
+              : saved.client
+                ? `This engagement uses ${saved.clientName}'s criteria, saved ${new Date(saved.client.updated_at).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}.`
+                : `Nothing is saved for ${saved.clientName} yet, so the default settings are shown.`}
+          </p>
+        </div>
 
         <Rule number={1} title="Off-Hours Posting" field="flag_off_hours" {...ruleProps}
           hint={`Flag entries keyed in on a weekend or a Philippine holiday. ${holidayCount} holidays are in the Holiday Calendar.`}>

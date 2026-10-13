@@ -132,11 +132,6 @@ export default function FlagReview({ engagementId, entry, entryIds, jeLines, acc
           <option value="">Your decision...</option>
           {Object.entries(DECISIONS).map(([v, label]) => <option key={v} value={v}>{label}</option>)}
         </select>
-        {note && (
-          <button onClick={() => { setComment(note.draft_comment); setAiDrafted(true); }} className="btn btn-ai btn-sm">
-            Use Claude&apos;s draft comment
-          </button>
-        )}
         {review && <span className="badge badge-success">Saved: {DECISIONS[review.disposition]}</span>}
       </div>
       <label htmlFor={`comment-${entry.id}`} style={{ marginTop: 12 }}>Comment</label>

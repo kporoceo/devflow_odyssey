@@ -13,7 +13,7 @@ const MAX_PICTURE_BYTES = 2 * 1024 * 1024;
 export default function MyAccount() {
   const { profile, refreshProfile } = useProfile();
   const [fullName, setFullName] = useState('');
-  const [engagementName, setEngagementName] = useState('');
+  const [clientName, setClientName] = useState('');
   const [message, setMessage] = useState('');
   const [pictureMessage, setPictureMessage] = useState('');
   const [uploading, setUploading] = useState(false);
@@ -22,9 +22,9 @@ export default function MyAccount() {
   useEffect(() => {
     if (!profile) return;
     setFullName(profile.full_name || '');
-    if (profile.client_engagement_id) {
-      supabase.from('engagements').select('client_name, engagement_name').eq('id', profile.client_engagement_id).single()
-        .then(({ data }) => setEngagementName(data ? `${data.client_name} — ${data.engagement_name}` : ''));
+    if (profile.client_id) {
+      supabase.from('clients').select('name').eq('id', profile.client_id).single()
+        .then(({ data }) => setClientName(data?.name || ''));
     }
   }, [profile]);
 
@@ -117,7 +117,7 @@ export default function MyAccount() {
             <div style={{ display: 'flex', gap: 16, padding: '10px 0', borderBottom: '1px solid var(--border)' }}><dt className="text-2" style={{ width: 140, flexShrink: 0 }}>Email</dt><dd style={{ margin: 0 }}>{profile.email}</dd></div>
             <div style={{ display: 'flex', gap: 16, padding: '10px 0', borderBottom: '1px solid var(--border)' }}><dt className="text-2" style={{ width: 140, flexShrink: 0 }}>Role</dt><dd style={{ margin: 0 }}>{profile.role}</dd></div>
             <div style={{ display: 'flex', gap: 16, padding: '10px 0', borderBottom: '1px solid var(--border)' }}><dt className="text-2" style={{ width: 140, flexShrink: 0 }}>Team</dt><dd style={{ margin: 0 }}>{teamOf(profile.role)}</dd></div>
-            {engagementName && <div style={{ display: 'flex', gap: 16, padding: '10px 0', borderBottom: '1px solid var(--border)' }}><dt className="text-2" style={{ width: 140, flexShrink: 0 }}>Engagement</dt><dd style={{ margin: 0 }}>{engagementName}</dd></div>}
+            {clientName && <div style={{ display: 'flex', gap: 16, padding: '10px 0', borderBottom: '1px solid var(--border)' }}><dt className="text-2" style={{ width: 140, flexShrink: 0 }}>Client</dt><dd style={{ margin: 0 }}>{clientName}</dd></div>}
           </dl>
           <p className="hint" style={{ marginTop: 16, marginBottom: 0 }}>Your email and role can only be changed by the System Administrator.</p>
         </div>

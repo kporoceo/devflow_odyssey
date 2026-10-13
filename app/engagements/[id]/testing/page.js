@@ -4,7 +4,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '../../../../lib/supabaseClient';
-import { runJETests, getRuleStatus, groupJournalEntries, RULE_LABELS, DEFAULT_CRITERIA } from '../../../../lib/jeTesting';
+import { runJETests, getRuleStatus, groupJournalEntries, RULE_LABELS } from '../../../../lib/jeTesting';
+import { loadCriteria } from '../../../../lib/criteria';
 import { askAI } from '../../../../lib/ai';
 import { fetchAll } from '../../../../lib/fetchAll';
 import FlagReview from '../../../../components/FlagReview';
@@ -109,11 +110,8 @@ export default function RunJETesting({ params }) {
       const { data: eng } = await supabase.from('engagements').select('status').eq('id', engagementId).single();
       setInactive(eng?.status === 'Inactive');
 
-      const { data: criteriaData } = await supabase
-        .from('testing_criteria')
-        .select('*')
-        .eq('engagement_id', engagementId)
-        .single();
+      // The engagement's own criteria, else its client's, else the defaults.
+      const { criteria: merged } = await loadCriteria(supabase, engagementId);
 
       const { data: holidayData } = await supabase
         .from('holidays')
@@ -132,14 +130,6 @@ export default function RunJETesting({ params }) {
       setAdjustments(Object.fromEntries((adjustmentData || []).filter((a) => a.journal_entry_id).map((a) => [a.journal_entry_id, a])));
 
       setEntries(entryData || []);
-      // Fall back to the default settings for anything never configured,
-      // so "Run JE Testing" still works instead of blocking the user.
-      const merged = { ...DEFAULT_CRITERIA };
-      if (criteriaData) {
-        Object.keys(DEFAULT_CRITERIA).forEach((key) => {
-          if (criteriaData[key] !== null && criteriaData[key] !== undefined) merged[key] = criteriaData[key];
-        });
-      }
       setCriteria(merged);
       const holidayMap = {};
       (holidayData || []).forEach((h) => { holidayMap[h.holiday_date] = h.name; });

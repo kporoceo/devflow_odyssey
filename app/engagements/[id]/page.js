@@ -7,13 +7,14 @@ import { createClient } from '../../../lib/supabaseClient';
 import { useProfile } from '../../../components/AppShell';
 import { isAuditTeam, isLeadership } from '../../../lib/roles';
 import { BackLink, BusyLabel, Spinner } from '../../../components/ui';
+import { loadCriteria } from '../../../lib/criteria';
 
 export default function EngagementDetail({ params }) {
   const { id } = params;
   const { profile } = useProfile();
   const [engagement, setEngagement] = useState(null);
   const [entryCount, setEntryCount] = useState(0);
-  const [progress, setProgress] = useState({ criteria: null, runs: [], reports: [] });
+  const [progress, setProgress] = useState({ criteria: null, uploads: 0, runs: [], reports: [] });
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState('');
   const [message, setMessage] = useState('');
@@ -43,12 +44,13 @@ export default function EngagementDetail({ params }) {
       setEntryCount(count || 0);
 
       // What has been done so far, for the step badges below.
-      const [{ data: criteria }, { data: runs }, { data: reports }] = await Promise.all([
-        supabase.from('testing_criteria').select('updated_at').eq('engagement_id', id).maybeSingle(),
+      const [criteria, { count: uploads }, { data: runs }, { data: reports }] = await Promise.all([
+        loadCriteria(supabase, id),
+        supabase.from('je_uploads').select('*', { count: 'exact', head: true }).eq('engagement_id', id),
         supabase.from('je_test_results').select('run_at, flagged_count, total_entries').eq('engagement_id', id).order('run_at', { ascending: false }),
         supabase.from('reports').select('status, updated_at').eq('engagement_id', id).order('updated_at', { ascending: false }),
       ]);
-      setProgress({ criteria, runs: runs || [], reports: reports || [] });
+      setProgress({ criteria, uploads: uploads || 0, runs: runs || [], reports: reports || [] });
       setLoading(false);
     }
     load();
@@ -94,7 +96,8 @@ export default function EngagementDetail({ params }) {
   // still sees the whole picture (the database enforces the same rules).
   const auditTeam = isAuditTeam(profile.role);
   const canSeeTesting = auditTeam || leadership;
-  const { criteria, runs, reports } = progress;
+  const { criteria, uploads, runs, reports } = progress;
+  const savedCriteria = criteria?.own || criteria?.client;
   const lastRun = runs[0];
   const lastReport = reports[0];
   const day = (d) => new Date(d).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
@@ -104,16 +107,21 @@ export default function EngagementDetail({ params }) {
     {
       href: `/engagements/${id}/criteria`, title: 'Configure Testing Criteria',
       allowed: auditTeam, who: 'audit',
-      done: !!criteria,
-      badge: criteria ? ['Configured', 'badge-success'] : ['Using defaults', 'badge-warning'],
-      text: criteria ? `Saved ${day(criteria.updated_at)}` : 'Set the parameters for the 7 JE testing rules',
+      done: !!savedCriteria,
+      badge: criteria?.source === 'engagement' ? ['This engagement only', 'badge-success']
+        : criteria?.source === 'client' ? ['Client\'s criteria', 'badge-success'] : ['Using defaults', 'badge-warning'],
+      text: savedCriteria
+        ? `${criteria.source === 'client' ? `Shared by all ${engagement.client_name} engagements. ` : ''}Saved ${day(savedCriteria.updated_at)}`
+        : 'Set the 7 JE testing rules once for this client',
     },
     {
       href: `/engagements/${id}/upload`, title: 'Upload JE Data',
       allowed: auditTeam && !inactive, who: 'audit-active',
       done: entryCount > 0,
       badge: entryCount > 0 ? ['Uploaded', 'badge-success'] : ['Not yet', 'badge'],
-      text: entryCount > 0 ? `${entryCount.toLocaleString()} lines uploaded` : 'Upload the client\'s general ledger',
+      text: entryCount > 0
+        ? `${entryCount.toLocaleString()} lines in ${uploads} upload${uploads === 1 ? '' : 's'}`
+        : 'Upload the client\'s general ledger (one or more files)',
     },
     {
       href: `/engagements/${id}/testing`, title: 'Run JE Testing',

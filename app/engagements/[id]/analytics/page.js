@@ -16,6 +16,7 @@ import { runJETests, groupJournalEntries, classifyAccount, RULE_LABELS, RULE_ORD
 import { askAI } from '../../../../lib/ai';
 import { BackLink, BusyLabel, ClaudeTag, Spinner } from '../../../../components/ui';
 import { fetchAll } from '../../../../lib/fetchAll';
+import { loadCriteria } from '../../../../lib/criteria';
 import { Panel, Tile, Legend, ColumnChart, BarList, HeatTable, DataTable, peso, pesoShort, BLUE, ORANGE } from '../../../../components/charts';
 
 const PAGES = ['Trending', 'Potential SOD', 'Cutoff', 'Posting Date Lag', 'Activity Map', 'Duplicate JEs', 'Weekend JEs', 'Flags & Review'];
@@ -95,7 +96,11 @@ function toCSV(rows) {
   if (rows.length === 0) return '';
   const cols = Object.keys(rows[0]);
   const esc = (v) => {
-    const s = v === null || v === undefined ? '' : String(v);
+    let s = v === null || v === undefined ? '' : String(v);
+    // A client's text that starts with = + - or @ would run as a formula when the
+    // CSV is opened in Excel (CSV injection), so it is saved as plain text instead.
+    // Real numbers like -1500.00 are left alone.
+    if (typeof v === 'string' && /^[=+\-@\t\r]/.test(s) && !/^-?\d+(\.\d+)?$/.test(s)) s = `'${s}`;
     return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
   return [cols.join(','), ...rows.map((r) => cols.map((c) => esc(r[c])).join(','))].join('\n');
@@ -128,17 +133,11 @@ export default function Analytics({ params }) {
         .order('created_at', { ascending: true })
         .order('line_no', { ascending: true })
         .order('id', { ascending: true }));
-      const { data: criteriaData } = await supabase.from('testing_criteria').select('*').eq('engagement_id', engagementId).maybeSingle();
+      const { criteria: merged } = await loadCriteria(supabase, engagementId);
       const { data: holidayData } = await supabase.from('holidays').select('holiday_date, name');
       const { data: reviewData } = await fetchAll(() => supabase.from('flag_reviews').select('id, journal_entry_id, disposition, comment').eq('engagement_id', engagementId).order('id'));
       const { data: adjData } = await supabase.from('adjusting_entries').select('status').eq('engagement_id', engagementId);
 
-      const merged = { ...DEFAULT_CRITERIA };
-      if (criteriaData) {
-        Object.keys(DEFAULT_CRITERIA).forEach((k) => {
-          if (criteriaData[k] !== null && criteriaData[k] !== undefined) merged[k] = criteriaData[k];
-        });
-      }
       setEngagement(eng);
       setEntries(entryData || []);
       setCriteria(merged);
